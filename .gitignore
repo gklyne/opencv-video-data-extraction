@@ -1,0 +1,38 @@
+*.py[co]
+cvenv
+output.*
+*.mov
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+var
+sdist
+develop-eggs
+.installed.cfg
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+
+#Translations
+*.mo
+
+# 3D printing
+*.gcode
+
+#system and general
+*.tmp
+*.log
+*.bak
+*~
+.DS_Store
+
