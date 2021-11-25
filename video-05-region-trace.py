@@ -1,6 +1,16 @@
-# video-read-demo.py
+# video-05-region-trace.py
+#
+# This version will take the detected region coordinates, 
+# and build traces of regions that are detected in successive frames.
+# It represents a departure from an earlier approach of trying to
+# detect rows by finding frames where the transient regions (corresponding
+# to tape holes) had all disappeared.  By focusing in traces, this new
+# approach attempts avoid problems where new traces are starting to appear 
+# before all previous traces have diusappeared (e.g. due to skewing of 
+# the tape/camera)
 
-from __future__ import print_function
+#@@@ Require Python 3...
+#@@@ from __future__ import print_function
 import cv2 as cv
 import numpy as np
 import argparse
@@ -127,6 +137,34 @@ def select_highlight_regions(frame):
         )
     return frame_thresholded
 
+def calc_region_centroid_area(region_pixels):
+    # Input:
+    #
+    #   { xmin, ymin, xmax, ymax, [pixelcoords] }
+    #
+    # Output:
+    #
+    #   { xcen: (float),   ycen: (float),
+    #     xmin: (integer), ymin: (integer),
+    #     xmax: (integer), ymax: (integer),
+    #     area: (integer) 
+    #   }
+    #
+    pcnt = len(region_pixels['pixelcoords'])   # Pixel count
+    xsum = 0                                    # Sum of X coords
+    ysum = 0                                    # Sum of Y coords
+    # print(pcnt, region_pixels['xmin'], region_pixels['ymin'], region_pixels['xmax'], region_pixels['ymax'], region_pixels)
+    for [px, py] in region_pixels['pixelcoords']:   # @@@ use reducer function here
+        xsum += px
+        ysum += py
+    return (
+        { 'fnum': region_pixels['fnum'],
+          'xcen': xsum / pcnt,           'ycen': ysum / pcnt,
+          'xmin': region_pixels['xmin'], 'ymin': region_pixels['ymin'],
+          'xmax': region_pixels['xmax'], 'ymax': region_pixels['ymax'],
+          'area': pcnt
+        })
+
 def get_region_coordinates(frame_number, frame):
     # Returns list of coordinates, where each coordinate is:
     #
@@ -221,43 +259,38 @@ def format_region_coords(coords):
         f"area {coords['area']:4d}"
         )
 
-def calc_region_centroid_area(region_pixels):
-    # Input:
-    #
-    #   { xmin, ymin, xmax, ymax, [pixelcoords] }
-    #
-    # Output:
-    #
-    #   { xcen: (float),   ycen: (float),
-    #     xmin: (integer), ymin: (integer),
-    #     xmax: (integer), ymax: (integer),
-    #     area: (integer) 
-    #   }
-    #
-    pcnt = len(region_pixels['pixelcoords'])   # Pixel count
-    xsum = 0                                    # Sum of X coords
-    ysum = 0                                    # Sum of Y coords
-    # print(pcnt, region_pixels['xmin'], region_pixels['ymin'], region_pixels['xmax'], region_pixels['ymax'], region_pixels)
-    for [px, py] in region_pixels['pixelcoords']:   # @@@ use reducer function here
-        xsum += px
-        ysum += py
-    return (
-        { 'fnum': region_pixels['fnum'],
-          'xcen': xsum / pcnt,           'ycen': ysum / pcnt,
-          'xmin': region_pixels['xmin'], 'ymin': region_pixels['ymin'],
-          'xmax': region_pixels['xmax'], 'ymax': region_pixels['ymax'],
-          'area': pcnt
-        })
+# Region trace methods
+#
+# region_coords: region in single frame (from above):
+#
+#       { 
+#         xcen: (float),   ycen: (float),
+#         xmin: (integer), ymin: (integer),
+#         xmax: (integer), ymax: (integer),
+#         area: (integer) 
+#       }
+#
+# region_trace: trace of region through several frames
+#
+#       { 
+#         frnum:   (integer)            # Start frame number
+#         frend:   (integer)            # End frame number, or -1 if still open
+#         rcoords: [(region_coords)]    # region coords for each fame in range
+#                                       # - index +frnum to get actual frame number
+#       }
+#
+# @@ ??? possible add mean position/total area/average area in frame for closed traces
+#
+# open_region_traces:
+#
+#       [ (region_trace) ]              # Arbitrary ordering (could be set, bag)
+#
+# closed_region_traces:
+#
+#       [ (region_trace) ]              # Ordered by ??? ending frame number
+#
 
-# Row detector methods
 
-def format_row_detect_buffer(buffer):
-    return (
-        f"frnum {buffer['frnum']:3d}, "
-        f"ccmin {buffer['ccmin']:3d}, ccmax {buffer['ccmax']:3d}, "
-        f"ccprv {buffer['ccprv']:3d}, ccdip {buffer['ccdip']:3d}, "
-        f"endfr {buffer['endfr']:3d}"
-        )
 
 def region_overlaps(r, rtrace):
     # Determine if given region 'r' overlaps with the region trace 'rtrace'.
@@ -283,230 +316,10 @@ def extend_rtrace(rtrace, frnum):
         rtrace.append(None)
     return rtrace
 
-def row_detect_update_traces(frnum, coord_list, rtraces):
-    # With a new frame of region coordinates, extend traces of regions.
-    #
-    # frnum         relative position within row of this next frame.
-    # coord_list    list of region coordinates from next frame
-    # rtraces       region traces to be updated.  This is a list of region
-    #               traces, where each trace corresponds to the appearance of
-    #               a single region in each frame, or None in frames where the 
-    #               region does not appear.
-    #
-    # Returns updated list of region traces.  
-    # (The supplied list may also be mutated in situ.)
-    #
-    for c in coord_list:
-        #@@@@
-        # print("@@@ row_detect_update_traces: ", format_region_coords(c))
-        # for tc in rtraces:
-        #     print("@@@ ... ", format_region_coords(tc[-1]))
-        #@@@@
-        trpos = len(rtraces)
-        for i in range(trpos):
-            if region_overlaps(c, rtraces[i]):
-                trpos = i
-                break
-        else:
-            rtraces.append([])
-        extend_rtrace(rtraces[trpos], frnum)
-        rtraces[trpos].append(c)
-    return rtraces
-
-def row_detect_add_frame_coords(coord_list, buffer):
-    # Add coordinate data for next frame to row detector buffer, and
-    # returns coordinate count for the frame, and the updated buffer
-    #
-    # coord_list    is a list of region coordinate values for a single frame, where
-    #               each such value consists of:
-    #               { 'fnum': (int),    # Video frame number
-    #                 'xcen': (float),  # X-coordinate of region centroid
-    #                 'ycen': (float),  # Y-coordinate of region centroid
-    #                 'xmin': (int),    # Min X-coordinate of region
-    #                 'ymin': (int),    # Min Y-coordinate of region
-    #                 'xmax': (int),    # Max X-coordinate of region
-    #                 'ymax': (int),    # Max Y-coordinate of region
-    #                 'area': (int)     # Area (num pixels) of region
-    #               }
-    # buffer        is a row detection buffer, consisting of data accumulated over multiple 
-    #               video frames, thus:
-    #               { frnum: (int),     # next frame number offset within row
-    #                 ccmin: (int),     # min region count seen for any frame so far
-    #                 ccmax: (int),     # max region count seen for any frame so far
-    #                 ccdip: (int),     # min region count seen following ccmax
-    #                 endfr: (int),     # index of frame in buffer where ccdip seen
-    #                 ccprv: (int),     # region count from previous frame
-    #                 rcoords: [],      # list of region coordinates by frame
-    #                 rtraces: []       # coordinate trace by region position
-    #               }
-    #
-
-    #@@TODO when counting regions, exclude those present in start or end frames@@
-
-    buffer['rcoords'].append(coord_list)
-    buffer['rtraces'] = row_detect_update_traces(buffer['frnum'], coord_list, buffer['rtraces'])
-    cc = len(coord_list)
-    if cc < buffer['ccmin']:
-        buffer['ccmin'] = cc
-    if cc > buffer['ccmax']:
-        buffer['ccmax'] = cc
-    # Possible end of frame dip?
-    if (cc < buffer['ccprv']):
-        buffer['ccdip'] = cc
-        buffer['endfr'] = buffer['frnum'] # len(buffer['rcoords'])
-    buffer['ccprv'] = cc
-    buffer['frnum'] += 1
-    return cc, buffer
-
-def row_detect_buffer_reset(frame_coords=[]):
-    # Reset value for row buffer, taking account of supplied coordinate data
-    # from frames after the previous row.
-    #
-    # frame_coords  a list of frame coordinate data that is used to initialize the
-    #               buffer for the next frame.  Empty list if there is no left-over 
-    #               frame data to use.  Leading empty frames in this data are skipped.
-    #
-    print(f"======= row_detect_buffer_reset: {len(frame_coords):d} frames")
-    reset_buffer = (
-        { 'frnum': 0,               # frame number within row (starting with 0)
-          'ccmin': 99999,           # minimum frame coordinate count anywhere
-          'ccmax': 0,               # max region count seen for row
-          'ccdip': 99999,           # min region count seen after max
-          'endfr': 0,               # buffer frame where ccdip seen
-          'ccprv': 0,               # coordinate count from previous frame
-          'rcoords': [],            # list of region coordinates seen for row
-          'rtraces': []             # list of region traces (though frames/time)
-        })
-    first_frame = True
-    for fr in frame_coords:
-        # Skip multiple leading empty frames
-        if fr or first_frame or (reset_buffer['ccmax'] > 0):
-            first_frame = False
-            cc, reset_buffer = row_detect_add_frame_coords(fr, reset_buffer)
-            # print("=== row_detect_buffer_reset: Frames")
-            # for r in fr:
-            #     print("coords: ", format_region_coords(r))
-            # print("buffer: ", format_row_detect_buffer(reset_buffer))
-    return reset_buffer
-
-def row_detect(coord_list, buffer):
-    # Tape row detector.  Process the next frame of coordinates from the tape,
-    # detect when a complete tape row has been scanned, and when detected, extract
-    # and summarize coordinate data for that row.
-    #
-    # Looks for dip and rise of at least 2 region coordinates to signal end of row
-    # NOTE: assumes fairly clean data.  If noise, may also need to take account of
-    # total area of regions within bounding box?
-    # 
-    #   next_row, buffer = row_detect(coord_list, buffer)
-    # 
-    # coord_list    coordinate data from a single video frame, presented in sequence.
-    # buffer        buffer for frame data from a single row of tape holes, or empty list.
-    # next_row      summarized coordinate data returned when next tape row is detected, or
-    #               None if there is no new row detected.
-    # 
-
-    #@@TODO when counting regions, exclude those present in start or end frames@@
-
-    # Update row detector statistics with next frame data
-    cc, buffer = row_detect_add_frame_coords(coord_list, buffer)
-
-    # Detect end of row - is coordinate count 2 up from most recent dip?
-    end_of_row = (
-        (cc >  buffer['ccdip'])   and               # Coord count is rising from dip
-        (cc >= buffer['ccmin']+2) and               # Coord count is at least 2 above min
-        (buffer['ccdip'] <= buffer['ccmax']-2) and  # Coord count has dipped from max
-        (buffer['ccdip'] <= buffer['ccmin']+2)      # Coord count has dipped close to min
-        )
-
-    # Sort out result to return
-    if end_of_row:
-        #@@@
-        # printbuffer = buffer.copy()
-        # printbuffer['rcoords'] = printbuffer['rcoords'][buffer['endfr']-2:]
-        # print("@@@end ", printbuffer)
-        #@@@
-        next_buffer = row_detect_buffer_reset(buffer['rcoords'][buffer['endfr']:])
-        next_row    = dict(buffer, endfr=0, rcoords=buffer['rcoords'][:buffer['endfr']])
-    else:
-        next_row    = None
-        next_buffer = buffer
-
-    return (next_row, next_buffer)
-
-def test_row_detect():
-    buffer        = row_detect_buffer_reset([])
-    frame_regions = (
-        (79, [(( 461.4,  139.8), ( 460, 462 ), ( 136, 144 ),  18)]),
-        (80, [(( 459.2,  141.6), ( 456, 462 ), ( 134, 149 ), 101),
-              (( 455.0, 1144.7), ( 452, 458 ), (1138, 1152),  85)]),
-        (81, [(( 457.0,  140.7), ( 455, 459 ), ( 135, 147 ),  54),
-              (( 453.2, 1144.3), ( 451, 456 ), (1137, 1152),  80)]),
-        (82, []),
-        (83, [(( 459.1,  140.7), ( 458, 460 ), ( 137, 144 ),  21)]),
-        (84, [(( 457.3,  141.6), ( 454, 460 ), ( 134, 150 ), 104),
-              (( 453.6, 1145.4), ( 450, 457 ), (1138, 1153),  93)]),
-        (85, [(( 457.7,  142.2), ( 455, 461 ), ( 135, 150 ),  97),
-              (( 453.8, 1145.9), ( 451, 457 ), (1138, 1154), 106)]),
-        (86, [(( 456.9,  142.0), ( 456, 458 ), ( 138, 146 ),  25),
-              (( 453.6, 1145.8), ( 452, 455 ), (1141, 1151),  35)]),
-        )
-    for fr in frame_regions:
-        frame_region_coords = [
-            { 'fnum': fr[0],
-              'xcen': r[0][0], 'ycen': r[0][1],
-              'xmin': r[1][0], 'ymin': r[2][0],
-              'xmax': r[1][1], 'ymax': r[2][1],
-              'area': r[3]
-            } for r in fr[1] ]
-        next_row, buffer = row_detect(frame_region_coords, buffer)
-        print("=== Frame ", fr[0])
-        for r in frame_region_coords:
-            print("coords: ", format_region_coords(r))
-        print("buffer: ", format_row_detect_buffer(buffer))
-        if next_row:
-            print("=== Next row:")
-            print(format_row_detect_buffer(next_row))
-            print("===")
 
 
-def check_next_row(row_number, row_data, next_row_buffer):
-    print("=== Next row", row_number, 
-        "min/max regions", row_data['ccdip'], "/", row_data['ccmax'], 
-        "frames", len(row_data['rcoords']),
-        "regions", len(row_data['rtraces']),
-        "===")
-    err  = False    # Region count double peak seen
-    cdec = False    # Region count decrease seen
-    cmin = 0        # Region count minimum (trough) since last peak
-    cprv = 0        # Region count from previous frame
-    for f in row_data['rcoords']:
-        if f:
-            print(f"  frame {f[0]['fnum']:5d}, regions {len(f):2d}")
-            # for c in f:
-            #     print("    ", format_region_coords(c))
-        else:
-            print("  empty frame")
-        # Region count double peak detector
-        cnxt = len(f)
-        if cnxt < cprv: 
-            cdec = True     # Region count decreased seen
-            cmin = cnxt
-        rpk2 = cdec and (cnxt > cprv) and (cprv <= cmin+2)
-        if rpk2:
-            print(f">>> Region count double rise at {f[0]['fnum']:5d}")
-            err = True
-        cprv = cnxt
-    print("=== Next row start ===")
-    for f in next_row_buffer['rcoords']:
-        if f:
-            print(f"  frame {f[0]['fnum']:5d}, regions {len(f):2d}")
-            # for c in f:
-            #     print("    ", format_region_coords(c))
-        else:
-            print("  empty frame")
-    print("=== Ends ===\n")
-    return err
+
+
 
 ###### Main program ######
 
@@ -537,15 +350,13 @@ def main():
             frame_width*2, frame_height     # size
         )
 
-
     #  Main frame-processing loop
 
     paused = False
     step   = False
 
-    row_detect_buffer = row_detect_buffer_reset([])
-    row_number        = 0
-    row_start_frame   = 0
+    open_traces   = {}
+    closed_traces = {}
 
     while True:
 
@@ -600,12 +411,13 @@ def main():
             #     print("  ", format_region_coords(c))
             # # paused = True
 
-            # Coalesce regions from successive frames as raw data for row-by-row data extraction
-            next_row, row_detect_buffer = row_detect(filtered_coord_list, row_detect_buffer)
-            if next_row:
-                row_number += 1
-                row_start_frame = next_row['rcoords'][0][0]['fnum'] - 1
-                paused = check_next_row(row_number, next_row, row_detect_buffer)
+            # Coalesce regions from successive frames into region traces
+            new_traces, open_traces = region_trace_detect(frame_number, filtered_coord_list, open_traces)
+            closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
+
+            # Show closed region traces
+            show_region_traces(frame_number, closed_traces)
+
 
         # Check for keyboard interrupt, or move to next frame after 20ms
         paused   = paused or step
@@ -624,15 +436,6 @@ def main():
             # Single-step frame
             step   = True
             paused = False
-        if keyboard == ord('b'):
-            # Backup to start of row
-            paused = True
-            step   = False
-            print(f"Seek to frame {row_start_frame:d}")
-            seek_ok = seek_video_frame(video_capture, row_start_frame)
-            if not seek_ok:
-                print(">>> frame backup failed")
-            row_detect_buffer = row_detect_buffer_reset([])
         if keyboard == ord('q') or keyboard == 27:
             # Quit
             break
