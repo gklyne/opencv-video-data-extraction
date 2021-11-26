@@ -5,6 +5,7 @@
 # App environment and data
 cvenv
 output.*
+output-*.*
 *.mov
 
 # Packages
