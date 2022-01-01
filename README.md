@@ -5,7 +5,7 @@ Experiments with using OpenCV with Python to read data from a video recording
 
 ## Setup
 
-- Installed xcode
+- installed xcode (can skip this?)
 
 - installed command line tools (`xcode-select --install`)
 
