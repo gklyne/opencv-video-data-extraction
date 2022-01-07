@@ -1,20 +1,31 @@
-# video-05-region-trace.py
+# video-06-row-detect.py
 #
-# This version will take the detected region coordinates, 
-# and build traces of regions that are detected in successive frames.
-# It represents a departure from an earlier approach of trying to
-# detect rows by finding frames where the transient regions (corresponding
-# to tape holes) had all disappeared.  By focusing in traces, this new
-# approach attempts avoid problems where new traces are starting to appear 
-# before all previous traces have disappeared (e.g. due to skewing of 
-# the tape/camera)
+# This version will build highlighted region traces over multiple video frames, then 
+# group them into rows corresponding to holes in a single row on the Monotype system tape.
 
 import cv2 as cv
 import numpy as np
 import argparse
 import math
 import statistics
+import functools
 import sys
+
+# Log/debug functions
+
+def log_error(*args):
+    print("ERROR", *args)
+
+def log_warning(*args):
+    print("WARNING", *args)
+
+def log_info(*args):
+    print(*args)
+
+def log_debug(*args):
+    print(*args)
+    pass
+
 
 # Video I/O functions
 
@@ -88,28 +99,15 @@ def show_video_frame_mask(frame_label, frame_number, frame_data):
     return show_video_frame(frame_label, frame_number, frame_show)
 
 def draw_region_centroids(frame_show, centroid_data):
-    # NOTE colour channels are B,G,R:
-    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_red = (0, 0, 255)
     for a in centroid_data:
-        cx = round(a['xcen'])
-        cy = round(a['ycen'])
-        cr = math.ceil( math.sqrt((a['area'])) )
-        cv.circle(frame_show, (cx,cy), cr, colour_red, thickness=2)
+        print(str(a))
+        a.draw(frame_show)
     return
 
 def show_video_frame_mask_centroids(frame_label, frame_number, frame_data, centroid_data):
     # Display mask frame with centroid data, and return displayed frame value
     frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
     draw_region_centroids(frame_show, centroid_data)
-    # # NOTE colour channels are B,G,R:
-    # # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    # colour_red = (0, 0, 255)
-    # for a in centroid_data:
-    #     cx = round(a['xcen'])
-    #     cy = round(a['ycen'])
-    #     cr = math.ceil( math.sqrt((a['area'])) )
-    #     cv.circle(frame_show, (cx,cy), cr, colour_red, thickness=2)
     return show_video_frame(frame_label, frame_number, frame_show)
 
 def write_video_frame_pair(video_writer, frame_number, frame_1, frame_2):
@@ -125,20 +123,53 @@ def close_video_windows():
     cv.destroyAllWindows()
     return
 
-# Video processing pipeline methods
+
+# Video processing pipeline classes and functions
+
+# ----------------------------------------- #
+# -- region_frame_pixels ------------------ #
+# ----------------------------------------- #
+
+class region_frame_pixels(object):
+    """
+    A collection of video frame pixels corresponding to a highlighted region in the frame.
+    Some (most?) such regions correspond to a hole in the tape being read.
+    """
+
+    __slots__ = "fnum", "xmin", "ymin", "xmax", "ymax", "pixelcoords"   # Optimization
+
+    def __init__(self, fnum, xmin, ymin, xmax, ymax, pixelcoords):
+        self.fnum = fnum
+        self.xmin = xmin
+        self.ymin = ymin
+        self.xmax = xmax
+        self.ymax = ymax
+        self.pixelcoords = pixelcoords  
+        return
+
+    def __str__(self):
+        return (
+            f"Pixels frame {self.fnum:4d}"
+            f", X ({self.xmin:4d}..{self.xmax:<4d}), "
+            f", Y ({self.ymin:4d}..{self.ymax:<4d}), "
+            )
+
 
 def convert_frame_to_greyscale(frame):
-    # Return fra,me converted to greyscale
+    """
+    Return video frame converted to greyscale
+    """
     return cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
 def select_highlight_regions(frame):
-    # Select bright highlight regions
-    #
-    # Returns frame of B/W pixels coded as 0 or 255
-    #
-    # Is this helpful?  Assuming not
-    #??? frame_blur = cv.GaussianBlur(frame_grey, (7, 7), 0)
-
+    """
+    Select bright highlight regions
+    
+    Returns frame of B/W pixels coded as 0 or 255
+    
+    Is this helpful?  Assuming not
+    ??? frame_blur = cv.GaussianBlur(frame_grey, (7, 7), 0)
+    """
     threshold = 200
     high_out  = 255 
     T, frame_thresholded = cv.threshold(
@@ -148,127 +179,197 @@ def select_highlight_regions(frame):
         )
     return frame_thresholded
 
-def calc_region_centroid_area(region_pixels):
-    # Input:
-    #
-    #   { xmin, ymin, xmax, ymax, [pixelcoords] }
-    #
-    # Output:
-    #
-    #   { xcen: (float),   ycen: (float),
-    #     xmin: (integer), ymin: (integer),
-    #     xmax: (integer), ymax: (integer),
-    #     area: (integer) 
-    #   }
-    #
-    pcnt = len(region_pixels['pixelcoords'])   # Pixel count
-    xsum = 0                                    # Sum of X coords
-    ysum = 0                                    # Sum of Y coords
-    # print(pcnt, region_pixels['xmin'], region_pixels['ymin'], region_pixels['xmax'], region_pixels['ymax'], region_pixels)
-    for [px, py] in region_pixels['pixelcoords']:   # @@@ use reducer function here
-        xsum += px
-        ysum += py
-    return (
-        { 'fnum': region_pixels['fnum'],
-          'xcen': xsum / pcnt,           'ycen': ysum / pcnt,
-          'xmin': region_pixels['xmin'], 'ymin': region_pixels['ymin'],
-          'xmax': region_pixels['xmax'], 'ymax': region_pixels['ymax'],
-          'area': pcnt
-        })
+def find_frame_regions(frame_number, frame):
+    """
+    Finds distinct highlight regions in a video frame.
+    
+    frame_number      is the video frame number being processed (saved with each region)
+    frame             is frame of binary pixels of highlights (see `select_highlight_regions`),
+                      in the form of a OpenCV frame (NumPy array) of zero or 255 pixels.
+    
+    Returns:          a list of `region_frame_pixels` values, one for each region detected.
+    """
 
-def get_region_coordinates(frame_number, frame):
-    # Returns list of coordinates, where each coordinate is:
-    #
-    #   { xcen: (float),   ycen: (float),
-    #     xmin: (integer), ymin: (integer),
-    #     xmax: (integer), ymax: (integer),
-    #     area: (integer) 
-    #   }
-    global paused, step
+    global paused, step     # May be used to pause video scan for debugging
 
     #  Get coords of non-zero pixels
     pixel_coords  = np.column_stack(np.where(frame))
-    # print("@@@1", pixel_coords)
+    # log_debug("@@@1", pixel_coords)
 
     # Merge non-zero pixels into regions.
-    region_pixels = []  # (xmin, ymin, xmax, ymax, [pixelcoords] )
+    region_pixels_list = []              # [region_frame_pixels]
     for ipy,ipx in pixel_coords:
-        region_numbers = []
-        # print("@@@1", ipx, ipy)
-        # print("@@@1", ipx, ipy, region_pixels)
-        for nr in range(len(region_pixels)):
-            r = region_pixels[nr]
-            # print("@@@2", nr, r)
+
+        region_numbers = []         # List of region numbers adjoining next pixel
+        # log_debug("@@@1", ipx, ipy)
+        # log_debug("@@@1", ipx, ipy, region_pixels_list)
+        for nr, r in enumerate(region_pixels_list):
+            # log_debug("@@@2", nr, r)
+
+            # Find regions that adjoin new pixel
             merge = False
             if ( r and
-                 (ipx >= r['xmin']-2) and (ipx <= r['xmax']+2) and
-                 (ipy >= r['ymin']-1) and (ipy <= r['ymax']+1) ):
-                # Look for adjacency:
-                for rpx,rpy in r['pixelcoords']:
-                    # print("@@@3", rpx, rpy)
+                 (ipx >= r.xmin-2) and (ipx <= r.xmax+2) and
+                 (ipy >= r.ymin-1) and (ipy <= r.ymax+1) ):
+                # Look for adjacency to actual pixel:
+                for rpx,rpy in r.pixelcoords:
+                    # log_debug("@@@3", rpx, rpy)
                     if ( (ipx >= rpx-2) and (ipx <= rpx+2) and
                          (ipy >= rpy-1) and (ipy <= rpy+1) ):
                         # New pixel adjacent to existing region: merge in
-                        if ipx < r['xmin']: r['xmin'] = ipx
-                        if ipx > r['xmax']: r['xmax'] = ipx
-                        if ipy < r['ymin']: r['ymin'] = ipy
-                        if ipy > r['ymax']: r['ymax'] = ipy
+                        if ipx < r.xmin: r.xmin = ipx
+                        if ipx > r.xmax: r.xmax = ipx
+                        if ipy < r.ymin: r.ymin = ipy
+                        if ipy > r.ymax: r.ymax = ipy
                         merge = True
-            if merge:
-                r['pixelcoords'].append([ipx,ipy])
-                region_numbers.append(nr)
+                if merge:
+                    r.pixelcoords.append((ipx,ipy))
+                    region_numbers.append(nr)
 
+        # If no adjoining region, create new region
         if len(region_numbers) == 0:
-            # Create new region
-            r = { 'fnum': frame_number,
-                  'xmin': ipx, 'xmax': ipx, 
-                  'ymin': ipy, 'ymax': ipy, 
-                  'pixelcoords': [[ipx, ipy]]
-                }
-            region_pixels.append(r)
+            r = region_frame_pixels(frame_number, ipx, ipy, ipx, ipy, [(ipx, ipy)])
+            region_pixels_list.append(r)
+
+        # If multiple adjoining regions, merge them all
         elif len(region_numbers) > 1:
             # Merge newly connected regions
-            r = region_pixels[region_numbers[0]]
-            # print("@@@4 (merge regions) ", region_numbers, r, ipx, ipy) 
+            r = region_pixels_list[region_numbers[0]]
+            # log_debug("@@@4 (merge regions) ", region_numbers, r, ipx, ipy) 
             # paused = True
             for n in range(1, len(region_numbers)):
-                r1 = region_pixels[region_numbers[n]]
-                # print("@@@5                 ", n, r1) 
-                if r1['xmin'] < r['xmin']: r['xmin'] = r1['xmin']
-                if r1['xmax'] > r['xmax']: r['xmax'] = r1['xmax']
-                if r1['ymin'] < r['ymin']: r['ymin'] = r1['ymin']
-                if r1['ymax'] > r['ymax']: r['ymax'] = r1['ymax']
-                r['pixelcoords'].extend(r1['pixelcoords'])
-                region_pixels[region_numbers[n]] = None
-            # Update first merged region
-            region_pixels[region_numbers[0]] = r
+                r1 = region_pixels_list[region_numbers[n]]
+                # log_debug("@@@5                 ", n, r1) 
+                if r1.xmin < r.xmin: r.xmin = r1.xmin
+                if r1.xmax > r.xmax: r.xmax = r1.xmax
+                if r1.ymin < r.ymin: r.ymin = r1.ymin
+                if r1.ymax > r.ymax: r.ymax = r1.ymax
+                r.pixelcoords.extend(r1.pixelcoords)
+                region_pixels_list[region_numbers[n]] = None
+            region_pixels_list[region_numbers[0]] = r
+
+        # If pixel merged with exactly one existing region - nothing more to do.
         else:
-            # pixel merged with exactly one existing region - nothing to do.
             pass
 
-    # For each region, calculate centroid and area
-    # See https://numpy.org/doc/stable/reference/generated/numpy.frompyfunc.html#numpy.frompyfunc
-    #region_coords = np.frompyfunc(calc_region_centroid_area, 1, 1)(region_pixels)
-    region_coords = []
-    for n in range(len(region_pixels)):
-        r = region_pixels[n]
-        if r:
-            region_coords.append(calc_region_centroid_area(r))
+    return filter(None, region_pixels_list)
 
-    return np.array(region_coords)
+# ----------------------------------------- #
+# -- region_frame_centroid ---------------- #
+# ----------------------------------------- #
 
-def filter_region_coordinates(coord_list):
+class region_frame_centroid(object):
+    """
+    Represents the calculated centroid of a region in a single frame
+    """
+
+    __slots__ = "area", "xcen", "ycen", "rpixels"
+
+    def __init__(self, region_pixels):
+        # self.area    = 0
+        # self.xcen    = 0.0
+        # self.ycen    = 0.0
+        # self.rpixels = None      # region_frame_pixels value (see above)
+        self.calc_centroid_area(region_pixels)
+        return
+
+    def draw(self, frame):
+        """
+        Draw centroid in supplied video frame buffer
+        """
+        # NOTE colour channels are B,G,R:
+        # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+        colour_red = (0, 0, 255)
+        cx = round(self.xcen)
+        cy = round(self.ycen)
+        cr = math.ceil( math.sqrt(self.area) )
+        cv.circle(frame, (cx,cy), cr, colour_red, thickness=2)
+        return
+
+    def __str__(self):
+        return (
+            f"centroid ({self.xcen:6.1f}, {self.ycen:6.1f})"
+            f", area {self.area:4d}"
+            f", X ({self.rpixels.xmin:4d}..{self.rpixels.xmax:<4d})"
+            f", Y ({self.rpixels.ymin:4d}..{self.rpixels.ymax:<4d})"
+            )
+
+    def calc_centroid_area(self, region_pixels):
+        # Calculates centroid and area of a region (marker, hole) in a single frame
+        #
+        # region_pixels     is a `region_frame_pixels` value with the pixels from which
+        #                   the centroid and area are calculated.
+        #
+        # Returns:          reference to the resulting `region_frame_centroid` object
+        #
+        pcnt = len(region_pixels.pixelcoords)   # Pixel count
+        xsum = 0                                # Sum of X coords
+        ysum = 0                                # Sum of Y coords
+        log_debug(
+            "@@@ region_frame_centroid.calc_centroid_area", 
+            pcnt, 
+            region_pixels.xmin, region_pixels.ymin, 
+            region_pixels.xmax, region_pixels.ymax, 
+            region_pixels
+            )
+        def vecsum(p1, p2):
+            x1, y1 = p1
+            x2, y2 = p2
+            return (x1+x2, y1+y2)
+        xsum, ysum   = functools.reduce(vecsum, region_pixels.pixelcoords)
+        self.area    = pcnt
+        self.xcen    = xsum/pcnt
+        self.ycen    = ysum/pcnt
+        self.rpixels = region_pixels
+        return self
+
+    def get_area(self):
+        return self.area
+
+    def get_centroid(self):
+        return (self.xcen, self.ycen)
+
+def find_frame_region_coords(region_pixels_list):
+    """
+    For each in a list of region pixels, calculate region centroid and area
+    """
+    region_coords = map(region_frame_centroid, region_pixels_list)
+    return region_coords
+
+def filter_region_coordinates(region_centroids_list):
+    """
+    Filter a list of region centroids to eliminate those that are unsuitable for further
+    consideration (e.g., too small to be a detected tape hole).
+    """
     def f(c):
-        return (c['area'] >= 12) # and (c['area'] <= 150)
-    return list(filter(f, coord_list))
+        return c and (c.area >= 12) # and (c['area'] <= 150)
+    return list(filter(f, region_centroids_list))
 
-def format_region_coords(coords):
-    return (
-        f"centroid ({coords['xcen']:6.1f}, {coords['ycen']:6.1f}), "
-        f"X ({coords['xmin']:4d}..{coords['xmax']:<4d}), "
-        f"Y ({coords['ymin']:4d}..{coords['ymax']:<4d}), "
-        f"area {coords['area']:4d}"
-        )
+# ----------------------------------------- #
+# -- region_trace ------------------------- #
+# ----------------------------------------- #
+
+class region_trace(object):
+    """
+    Base class for open- and closed- region traces
+    """
+
+    def __init__(self):
+        # @@@@
+        return
+
+class region_trace_open(region_trace):
+    """
+    Represents a (open, hence mutable) region traced through multiple frames
+    """
+    pass
+
+class region_trace_closed(region_trace):
+    """
+    Represents a (closed, hence immutable) region traced through multiple frames
+    """
+    pass
+
 
 # Region trace methods
 #
@@ -321,15 +422,15 @@ def region_overlaps(rc, rtrace):
     #
     if len(rtrace) == 0:
         return False
-    rx = round(rc['xcen'])
-    ry = round(rc['ycen'])
+    rx = round(rc.xcen)
+    ry = round(rc.ycen)
     r1 = rtrace['rcoords'][-1]         # Last position in trace
-    r1x = round(r1['xcen'])
-    r1y = round(r1['ycen'])
-    return ( ( (rx >= r1['xmin']) and (rx <= r1['xmax']) and
-               (ry >= r1['ymin']) and (ry <= r1['ymax']) ) or
-             ( (r1x >= rc['xmin']) and (r1x <= rc['xmax']) and
-               (r1y >= rc['ymin']) and (r1y <= rc['ymax']) ) 
+    r1x = round(r1.xcen)
+    r1y = round(r1.ycen)
+    return ( ( (rx  >= r1.rpixels.xmin) and (rx  <= r1.rpixels.xmax) and
+               (ry  >= r1.rpixels.ymin) and (ry  <= r1.rpixels.ymax) ) or
+             ( (r1x >= rc.rpixels.xmin) and (r1x <= rc.rpixels.xmax) and
+               (r1y >= rc.rpixels.ymin) and (r1y <= rc.rpixels.ymax) ) 
            )
 
 
@@ -378,14 +479,15 @@ def region_trace_summary(rtraces):
     for rt in rtraces:
         assert (rt['frend'] > 0), "Can't summarize open region trace"
         rt['frlen'] = rt['frend'] - rt['frnum']
-        rt['xcen']  = statistics.fmean([ rc['xcen'] for rc in rt['rcoords'] ])
-        rt['ycen']  = statistics.fmean([ rc['ycen'] for rc in rt['rcoords'] ])
-        rt['xmin']  = min([ rc['xmin'] for rc in rt['rcoords'] ]) 
-        rt['ymin']  = min([ rc['ymin'] for rc in rt['rcoords'] ]) 
-        rt['xmax']  = max([ rc['xmax'] for rc in rt['rcoords'] ]) 
-        rt['ymax']  = max([ rc['ymax'] for rc in rt['rcoords'] ]) 
-        rt['area']  = sum([ rc['area'] for rc in rt['rcoords'] ])
+        rt['xcen']  = statistics.fmean([ rc.xcen for rc in rt['rcoords'] ])
+        rt['ycen']  = statistics.fmean([ rc.ycen for rc in rt['rcoords'] ])
+        rt['xmin']  = min([ rc.rpixels.xmin for rc in rt['rcoords'] ]) 
+        rt['ymin']  = min([ rc.rpixels.ymin for rc in rt['rcoords'] ]) 
+        rt['xmax']  = max([ rc.rpixels.xmax for rc in rt['rcoords'] ]) 
+        rt['ymax']  = max([ rc.rpixels.ymax for rc in rt['rcoords'] ]) 
+        rt['area']  = sum([ rc.area for rc in rt['rcoords'] ])
     return rtraces
+
 
 # Add newly ending traces to buffer of closed traces.
 #
@@ -422,7 +524,7 @@ def draw_region_traces(frame_show, frnum, traces):
     return
 
 
-# show_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces)
+# show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces)
 #
 # frame_label   is a display label for the presented video frame
 # frame_number  is a frame number to be displayed
@@ -442,24 +544,26 @@ def show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, r
 # Log list of region traces to console
 #
 def log_region_traces(frnum, traces):
-    print(f"frame {frnum:d}")
+    log_info(f"frame {frnum:d} (trace)")
     for rt in traces:
-        print(f"frnum {rt['frnum']:4d}, frend {rt['frend']:4d}")
+        log_info(f"frnum {rt['frnum']:4d}, frend {rt['frend']:4d}")
         for rc in rt['rcoords']:
-            print("  "+format_region_coords(rc))
+            log_info("  "+str(rc))
     return
 
+def format_trace_summary(t):
+    return f"frnum {t['frnum']:4d}, frend {t['frend']:4d}, cent ({t['xcen']},{t['ycen']}, area {t['area']}"
 
 # Row methods
 #
-# A row is a set of closed regions that are assessed as representing a row of holes
+# A row is a set of closed traces that are assessed as representing a row of holes
 # in the tape.
 #
-# Representation for a closed region
+# Representation for a closed trace
 #       { 
 #         frnum:   (integer)            # Start frame number
 #         frend:   (integer)            # End frame number, or -1 if still open
-#         rcoords: [(region_coords)]    # region coords for each fame in range
+#         rcoords: [(region_coords)]    # region coords for each region in trace
 #                                       # - index +frnum to get actual frame number
 #         frlen:    (integer),          # Overall frame extent (length) of trace 
 #         xcen:     (float),            # Mean X position
@@ -469,45 +573,86 @@ def log_region_traces(frnum, traces):
 #         xmax:     (integer),          # Overall max X coord
 #         ymax:     (integer),          # Overall max Y coord
 #         area:     (integer),          # Total area summed over all frames
-#         # Added when a row is detected
+#         # Added when/after a row is detected?
 #         hpos:     (float)             # Hole position ('k' in constraints below)
 #       }
 #
-# A row is a (maximal) set of regions (approximately) satisfying the followjng constraints:
+# A row is a (maximal) set of traces (approximately) satisfying the followjng constraints:
 #
-# (P[xcen], P[ycen]) = (xbase + k*xspan, ybase + k*yspan); 0 <= k <= 1
-#   - for all regions P in a row, where xbase, ybase, xspan, yspan are the same for each such P.
-#     This effectively requires that the regions in a row sit on a line, at multiples of some unit 
+# [A]: P[frbeg] < Q[frend] 
+#   - for all traces P and Q in a row.  
+#     No trace in a row can start after another has ended; all traces in a row overlap 
+#     in at least one frame.
+#     This is used as a basis for determining that no further traces can be added to
+#     to a row, assuming that traces are presented in order of (ending) frame number.
+#
+# [B1]: P[frlen] < 2*Median(Q[frlen])
+#   - for all traces P and Q in a row.  
+#     No trace may be longer than twice the median length of other traces in a row.
+#     The intent is to eliminate extended traces that don't correspond to tape holes, 
+#     based on the assumption that all traces in a row will be of similar duration.
+#
+# [B2]: P[frlen] < 2*Q[frlen]+FLA
+#   - for all traces P and Q in a row.  
+#     While row data is incomplete, the median length of traces cannot be known.
+#     This constraint provides a very rough estimator for assessing whether there might be
+#     more traces to add, using the minimum trace length seen as a lower bound for the median.
+#   
+#     The "+FLA" is to avoid false row endings when a very short trace is present: the assumption here
+#     is that if an exceptional short trace is present, more representative traces will be encountered 
+#     within the FL additional frames.  This effectively forces a degree of lookahead in the incoming
+#     traces before declaring that a row is complete.
+#
+# [C]: each row contains least 3 traces.
+#     A valid Monotype tape row has at least 4 holes: 2 sprocket holes and 2 data holes.  The minimum
+#     of 3 allows for one of the sprocket holes to be missed.  Any putative row with fewer than 3 traces
+#     should be logged and disregarded.
+#
+# [D]: (P[xcen], P[ycen]) = (xbase + k*xspan, ybase + k*yspan); 0 <= k <= 1
+#   - for all traces P in a row, where xbase, ybase, xspan, yspan are the same for each such P.
+#     This effectively requires that the traces in a row sit on a line, at multiples of some unit 
 #     separation distance.  
 #     If (xbase,ybase) represents one of the sprocket holes, then (xspan,yspan) represents 
 #     the offset to the sprocket hole on the other side of the tape.  
 #     NOTE: sprocket holes are approx 5mm from data holes; data hole spacing is approx 3mm.
 #
-# P[frbeg] < Q[frend] 
-#   - for all regions P and Q in a row.  
-#     No region in a row can start after another has ended.
-#     The intent is that this provides a basis for determining that no further regions can be
-#     presented, assuming that regions are presented in order of starting or ending frame number.
-#
-# P[frlen] < 2*Q[frlen]
-#   - for all regions P and Q in a row.  
-#     No region is more than twice the duration of any other region in a row.
-#     The intent is to eliminate extended regions that don't correspond to tape holes, based
-#     on the assumption that all regions in a row will be of similar duration.
-#     @@NOTE: this might cause problems if some genuine regions are very short; 
-#     e.g. if tape is moved very fast.  The constraint might be adjusted to limit the length 
-#     of the longest region with respect to the average of all regions in the row.
-#
 # These constraints are designed to allow a RANSAC-like algorithm [1] to be used to separate real
-# data from noise (regions not corresponding to tape holes), without making assumptions about the
+# data from noise (traces not corresponding to tape holes), without making assumptions about the
 # camera orientation (may be skewed) or speed at which the tape is being drawn over the reader bar.
-# In this application it is possible that the total number of regions under consideration at any time 
+# In this application it is possible that the total number of traces under consideration at any time 
 # is small enough to allow an exhaustive search rather than random sampling.
 #
 # [1] https://en.wikipedia.org/wiki/Random_sample_consensus
 #
 # ----------
 
+# Find overlapping and non-overlapping traces
+#
+# trace                 a single trace to be tested
+# trace_set             a set of traces with which the supplied trace is compared
+#
+# Returns:  (trace_inc, trace_exc)
+#
+# trace_inc             list of elements in `trace_set` that overlaps with `trace`
+# trace_exc             list of elements in `trace_set` that does not overlap with `trace`
+#
+def find_trace_overlaps(trace, trace_set):
+    def trace_overlaps(t1, t2):
+        # NOTE: end frame is *after* last frame of trace
+        return (t1['frnum'] < t2['frend']) or (t2['frnum'] < t1['frend'])
+    ts_inc = []
+    ts_exc = []
+    # print("@@@ find_trace_overlaps for", format_trace_summary(trace))
+    for t in trace_set:
+        if trace_overlaps(t, trace):
+            # print("@@@ overlaps  ", format_trace_summary(t))
+            ts_inc.append(t)
+        else:
+            # print("@@@ no overlap", format_trace_summary(t))
+            ts_exc.append(t)
+    # print("@@@ ts_inc", ts_inc)
+    # print("@@@ ts_exc", ts_exc)
+    return (ts_inc, ts_exc)
 
 # Look for completed row of tape data in trace data.
 #
@@ -519,22 +664,23 @@ def log_region_traces(frnum, traces):
 #         frendmax: (integer)               # Maximum (final) region end frame number
 #         frlenmin: (integer)               # Minimum region frame length
 #         frlenmax: (integer)               # Maximum region frame length
+#         # For row parameters carried from row-to-row, the following are derived over recent rows:
 #         frlenave: (float)                 # Average region frame length
 #         xbase:    (float)                 # Base (hole 0) X-coordinate
 #         ybase:    (float)                 # Base (hole 0) Y-coordinate
-#         xspan:    (float)                 # Sprocket hole-to-hole X-offset
-#         yspan:    (float)                 # Sprocket hole-to-hole Y-offset
+#         xspan:    (float)                 # Sprocket hole-to-hole X-offset (extent of row holes)
+#         yspan:    (float)                 # Sprocket hole-to-hole Y-offset (extent of row holes)
 #         ...
 #       }
 #
 # Representation of a row of tape data:
 #       {
 #         params:   row_params              # (See above)
-#         regions:  [(closed_region)]       # List of closed regions corresponding to row data (see above)
+#         traces:  [(trace)]                # List of (closed) traces corresponding to row data (see above)
 #       }
 #
 #
-# frnum                 frame number currently processed.  No new regions may end before this frame number.
+# frnum                 frame number currently processed.  No new traces may end before this frame number.
 # row_params            row parameters from recently detected rows
 # trace_data            is a list of closed region traces, ordered by ending frame number, which have not yet
 #                       been definitively determined as belonging to a completed row, or no row at all.
@@ -547,10 +693,131 @@ def log_region_traces(frnum, traces):
 # updated_trace_data    is the supplied trace data excluding any region traces that have been detected 
 #                       as belonging to a completed row, or determined to be not belonging to any row.
 #
-def trace_row_detect(frnum, trace_data):
-    #@@@@
-    return (new_row, updated_trace_data)
+FLA = 4         # Frame lookahead when determining end of row
+def trace_row_detect(frnum, row_params, trace_data):
+    # Find all maximal subsets of overlapping traces (sharing at least one frame)
+    # (maximal => no other item in trace_data overlaps with any member of set)
+    trace_subsets = []
+    for t in trace_data:
+        overlap_seen = False
+        print("@@@ tsoverlaps for ", format_trace_summary(t))
+        tsoverlaps = ( find_trace_overlaps(t, ts) for ts in trace_subsets )
+        for oi, otss in enumerate(tsoverlaps):
+            print("@@@ Trace overlap ", oi, ":")
+            for ots in otss:
+                print("@@@ next ots")
+                for ot in ots:
+                    print(format_trace_summary(ot))
+        for i, (tsinc, tsexc) in enumerate(tsoverlaps):
+            if tsinc: 
+                overlap_seen = True
+                if tsexc:
+                    # Partial overlap: new subset with new trace
+                    trace_subsets.append(tsinc.append(t))
+                else:
+                    # Full overlap: add to existing subset
+                    trace_subsets[i] = trace_subsets[i].append(t)
+        if not overlap_seen:
+                # No overlap - new singleton sub set
+                trace_subsets.append([t])
 
+    for i, ts in enumerate(trace_subsets):
+        print("@@@ Trace subset ", i, ":")
+        for t in ts:
+            print(format_trace_summary(t))
+
+    # Find sets of traces that cannot be further extended
+    updated_trace_data = trace_data.copy()
+    updated_row_params = row_params.copy()
+    new_rows = []
+    while True:
+        tsi = None
+        for i, ts in enumerate(trace_subsets):
+            maxlen = 2*min( (t['frlen']) for t in ts ) + FLA
+            maxbeg = min( (t['frend']) for t in ts )
+            if frnum >= maxbeg+maxlen:
+                tsi = i
+                break
+        # Test possible row candidate
+        if tsi != None:
+            tsrow = trace_subsets.pop(tsi)
+            # Have row candidate: eliminate non-eligible traces per [B1]
+            medlen = statistics.median( (t['frlen'] for t in tsrow) )
+            for t in tsrow:
+                if t['frlen'] > 2*medlen:
+                    tsrow.remove(t)
+                if t in updated_trace_data:
+                    updated_trace_data.remove(t)
+            if len(tsrow) < 3:
+                log_warning("About frame ", frnum, ": insufficient traces for row")
+                log_region_traces(frnum, tsrow)
+            else:
+                new_rows.append( {'params': row_params, 'traces': tsrow} )
+        else:
+            # No more candidates
+            break
+
+    return (new_rows, updated_row_params, updated_trace_data)
+
+def draw_rows(frame_show, frnum, rows, colour_border, colour_fill):
+    for row in rows:
+        for rt in row['traces']:
+            w    = (rt['frend'] - rt['frnum'])*5
+            h    = rt['area'] / w
+            xoff = (rt['frend'] - frnum)*5
+            if (w < 1000) and (rt['xcen'] + xoff > 0):
+                x1   = round(rt['xcen'] - w + xoff)
+                y1   = round(rt['ycen'] - h/2)
+                x2   = round(rt['xcen'] + xoff)
+                y2   = round(rt['ycen'] + h/2)
+                cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill,   thickness=cv.FILLED)
+                cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+    return
+
+def draw_new_rows(frame_show, frnum, rows):
+    # NOTE colour channels are B,G,R:
+    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+    colour_trace = (  0, 255,   0)  # Green
+    colour_new   = (255, 255,   0)  # Cyan
+    colour_old   = (128, 128,   0)  # Teal
+    draw_rows(frame_show, frnum, rows, colour_trace, colour_new)
+    return
+
+def draw_old_rows(frame_show, frnum, rows):
+    # NOTE colour channels are B,G,R:
+    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+    colour_trace = (  0, 255,   0)  # Green
+    colour_new   = (255, 255,   0)  # Cyan
+    colour_old   = (128, 128,   0)  # Teal
+    draw_rows(frame_show, frnum, rows, colour_trace, colour_old)
+    return
+
+def log_rows(frnum, rows):
+    for i, row in enumerate(rows):
+        log_info("Frame {frnum:d}, row {i:d}")
+        for rt in row['traces']:
+            log_info(f"frnum {rt['frnum']:4d}, frend {rt['frend']:4d}, cent ({rt['xcen']},{rt['ycen']}, area {rt['area']}")
+
+# show_region_traces_rows(frame_label, frame_number, frame_data, rcoords, rtraces)
+#
+# frame_label   is a display label for the presented video frame
+# frame_number  is a frame number to be displayed
+# frame_data    is raw video data of the mask frame to be displayed
+# rcoords       is the region coordinates to be displayed for the current frame
+# rtraces       is a list of closed region traces to be displayed
+# new_rows      is a list of traces to be highlighted as newly detected rows
+# old_rows      is a list of traces to be highlighted as previously detected rows
+#
+# Returns displayed video frame
+#
+def show_video_frame_mask_region_traces_rows(frame_label, frame_number, frame_data, rcoords, rtraces, new_rows, old_rows):
+    # Display mask frame with centroid data, and return displayed frame value
+    frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    draw_region_centroids(frame_show, rcoords)
+    draw_region_traces(frame_show, frame_number, rtraces)
+    draw_new_rows(frame_show, frame_number, new_rows)
+    draw_old_rows(frame_show, frame_number, old_rows)
+    return show_video_frame(frame_label, frame_number, frame_show)
 
 ###### Main program ######
 
@@ -572,9 +839,9 @@ def main():
         cv.samples.findFileOrKeep(args.input)
         )
     if not video_capture:
-        print('Unable to open: ' + args.input)
+        log_error('Unable to open: ' + args.input)
         exit(0)
-    print("frame_height", frame_height, "frame_width", frame_width)
+    log_info("frame_height", frame_height, "frame_width", frame_width)
 
     video_writer = open_video_output(
             'output.avi',                   # where
@@ -588,6 +855,10 @@ def main():
 
     open_traces   = []
     closed_traces = []
+    row_traces    = []
+    new_rows      = []
+    old_rows      = []
+    row_params    = {}
 
     while True:
 
@@ -617,48 +888,55 @@ def main():
             # Display highlight regions
             # frame_show_highlights = show_video_frame_mask("Highlights", frame_number, frame_highlights)
 
-            # Extract coordinates of higlight regions
-            coord_list = get_region_coordinates(frame_number, frame_highlights)
-            # if frame_number == 97:
-            #     print(f"==== Frame {frame_number:d} coords:")
-            #     print("coord_list", coord_list)
-            #     paused = True
+            # Extract coordinates of highlight regions
+            region_pixels_list = list(find_frame_regions(frame_number, frame_highlights))
+            region_coords_list = list(find_frame_region_coords(region_pixels_list))
 
             # Filter out small and large highlight regions.  
             # Hopefully, just sprocket and data holes remain...
-            filtered_coord_list = filter_region_coordinates(coord_list)
+            filtered_region_coords_list = filter_region_coordinates(region_coords_list)
 
             # Display coords
-            # frame_show_coords = show_video_frame_mask_centroids(
-            #     "Centroids", frame_number, frame_highlights, 
-            #     filtered_coord_list
-            #     )
+            frame_show_coords = show_video_frame_mask_centroids(
+                "Centroids", frame_number, frame_highlights, 
+                filtered_region_coords_list
+                )
 
-            # print("Frame ", frame_number)
-            # for c in filtered_coord_list:
-            #     print("  ", format_region_coords(c))
-            # # paused = True
+            log_debug("Frame (filtered)", frame_number)
+            for c in filtered_region_coords_list:
+                log_debug("  ", str(c))
+            # paused = True
 
             # Coalesce regions from successive frames into region traces
-            new_traces, open_traces = region_trace_detect(frame_number, filtered_coord_list, open_traces)
+            new_traces, open_traces = region_trace_detect(frame_number, filtered_region_coords_list, open_traces)
             new_traces = region_trace_summary(new_traces)
             closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
 
-            # Show closed region traces
             log_region_traces(frame_number, new_traces)
-            frame_show_traces = show_video_frame_mask_region_traces(
-                "Traces", frame_number, frame_highlights, 
-                filtered_coord_list, closed_traces
-                )
+
+            # Group traces into rows
+            row_traces = region_trace_add(frame_number, new_traces, row_traces)
+            new_rows, row_params, row_traces = trace_row_detect(frame_number, row_params, row_traces)
+
+            # log_rows(frame_number, new_rows)
+
+            # Show row traces
+            # frame_show_traces = show_video_frame_mask_region_traces_rows(
+            #     "Rows", frame_number, frame_highlights, 
+            #     filtered_region_coords_list, closed_traces,
+            #     new_rows, old_rows
+            #     )
+            old_rows.extend(new_rows)
+            new_rows = []
 
             # Write the frame into the file 'output.avi'
-            write_video_frame_pair(video_writer, frame_number, frame_show_orig, frame_show_traces)
+            # write_video_frame_pair(video_writer, frame_number, frame_show_orig, frame_show_traces)
 
         # Check for keyboard interrupt, or move to next frame after 20ms
         paused   = paused or step
         keyboard = cv.waitKey(20)
         if keyboard != -1: 
-        	print(keyboard)
+        	log_debug(keyboard)
         if keyboard == ord('p'):
             # Pause
             paused = True
@@ -677,12 +955,12 @@ def main():
 
     # Shut down on exit
 
-    print("closing down")
+    log_info("closing down")
     close_video_input(video_capture)
     close_video_output(video_writer)
-    print("video streams closed")
+    log_info("video streams closed")
     close_video_windows()
-    print("end of main")
+    log_info("end of main")
 
 # Top level script
 
