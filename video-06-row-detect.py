@@ -288,7 +288,7 @@ class region_frame_centroid(object):
 
     def __str__(self):
         return (
-            f"centroid ({self.xcen:6.1f}, {self.ycen:6.1f})"
+            f"region_frame_centroid ({self.xcen:6.1f}, {self.ycen:6.1f})"
             f", area {self.area:4d}"
             f", X ({self.rpixels.xmin:4d}..{self.rpixels.xmax:<4d})"
             f", Y ({self.rpixels.ymin:4d}..{self.rpixels.ymax:<4d})"
@@ -305,13 +305,13 @@ class region_frame_centroid(object):
         pcnt = len(region_pixels.pixelcoords)   # Pixel count
         xsum = 0                                # Sum of X coords
         ysum = 0                                # Sum of Y coords
-        log_debug(
-            "@@@ region_frame_centroid.calc_centroid_area", 
-            pcnt, 
-            region_pixels.xmin, region_pixels.ymin, 
-            region_pixels.xmax, region_pixels.ymax, 
-            region_pixels
-            )
+        # log_debug(
+        #     "@@@ region_frame_centroid.calc_centroid_area", 
+        #     pcnt, 
+        #     region_pixels.xmin, region_pixels.ymin, 
+        #     region_pixels.xmax, region_pixels.ymax, 
+        #     region_pixels
+        #     )
         def vecsum(p1, p2):
             x1, y1 = p1
             x2, y2 = p2
@@ -328,6 +328,23 @@ class region_frame_centroid(object):
 
     def get_centroid(self):
         return (self.xcen, self.ycen)
+
+    def regions_overlap(self, r2):
+        """
+        Test for supplied region overlaps with current region.
+
+        Overlap occurs when the centroid of one region lies within the range of the other.
+        """
+        r1x = round(self.xcen)
+        r1y = round(self.ycen)
+        r2x = round(r2.xcen)
+        r2y = round(r2.ycen)
+        return ( ( (r2x >= self.rpixels.xmin) and (r2x <= self.rpixels.xmax) and
+                   (r2y >= self.rpixels.ymin) and (r2y <= self.rpixels.ymax) ) or
+                 ( (r1x >= r2.rpixels.xmin)   and (r1x <= r2.rpixels.xmax) and
+                   (r1y >= r2.rpixels.ymin)   and (r1y <= r2.rpixels.ymax) ) 
+               )
+
 
 def find_frame_region_coords(region_pixels_list):
     """
@@ -351,87 +368,127 @@ def filter_region_coordinates(region_centroids_list):
 
 class region_trace(object):
     """
-    Base class for open- and closed- region traces
+    Base class for open- and closed- region traces.
+
+    A region trace represents a single region across multiple video frames.
     """
 
-    def __init__(self):
-        # @@@@
+    def __init__(self, frnum, rcoords):
+        self.frnum   = frnum        # Start frame number
+        self.rcoords = rcoords      # list of `region_frame_centroid`s for each fame in range
+                                    # - index+frnum for video frame number
         return
 
 class region_trace_open(region_trace):
     """
     Represents a (open, hence mutable) region traced through multiple frames
     """
-    pass
+
+    def __init__(self, frnum, rcoords):
+        super(region_trace_open, self).__init__(frnum, rcoords)
+        self.closing = False
+        return
+
+    def region_overlaps_trace(self, rc):
+        """
+        Determine if given region 'rc' overlaps with the current region trace
+
+        rc              a `region_frame_centroid` value that is to be tested.
+
+        returns:        True if the supplied region coordinates overlap the
+                        final frame of the current region trace.
+        """
+        # log_debug("@@@ region_overlaps_trace ", self.frnum, len(self.rcoords))
+        if len(self.rcoords) == 0:
+            return False
+        rt  = self.rcoords[-1]          # Last position in trace
+        return rt.regions_overlap(rc)
+
+    def start_next_frame(self, frnum):
+        """
+        Start processing for next frame
+        """
+        # log_debug("@@@ start_next_frame ", frnum, len(self.rcoords))
+        self.closing = True     # Default closing unless extend_trace called
+        return
+
+    def extend_trace(self, frnum, rc):
+        """
+        Extend trace with region from next frame
+        """
+        # log_debug("@@@ extend_trace ", frnum, len(self.rcoords))
+        self.rcoords.append(rc)
+        self.closing = False
+        return
+
+    def trace_closing(self):
+        """
+        After next frame has been processed, test if trace is closing
+        """
+        return self.closing
+
 
 class region_trace_closed(region_trace):
     """
     Represents a (closed, hence immutable) region traced through multiple frames
     """
-    pass
 
+    def __init__(self, frend, trace_closing):
+        """
+        Create a closed trace from a closing open trace.
 
-# Region trace methods
-#
-# region_coords: region in single frame (from above):
-#
-#       { 
-#         xcen: (float),   ycen: (float),
-#         xmin: (integer), ymin: (integer),
-#         xmax: (integer), ymax: (integer),
-#         area: (integer) 
-#       }
-#
-# frame_coords:   list of region coordinates within a single frame.
-#
-#       [ (region_coords) ]
-#
-# region_trace: trace of region through several frames
-#
-#       { 
-#         frnum:   (integer)            # Start frame number
-#         frend:   (integer)            # End frame number, or -1 if still open
-#         rcoords: [(region_coords)]    # region coords for each fame in range
-#                                       # - index +frnum to get actual frame number
-#         # Summary data added after trace is ended:
-#         frlen:    (integer),          # Overall frame extent (length) of trace 
-#         xcen:     (float),            # Mean X position
-#         ycen:     (float),            # Mean Y position 
-#         xmin:     (integer),          # Overall min X coord
-#         ymin:     (integer),          # Overall min Y coord
-#         xmax:     (integer),          # Overall max X coord
-#         ymax:     (integer),          # Overall max Y coord
-#         area:     (integer),          # Total area summed over all frames
-#       }
-#
-# NOTE: end frame is frame *after* the last frame of the trace.
-#
-# @@ ??? possible add mean position/total area/average area in frame for closed traces
-#
-# open_region_traces:
-#
-#       [ (region_trace) ]              # Arbitrary ordering (could be set, bag)
-#
-# closed_region_traces:
-#
-#       [ (region_trace) ]              # Ordered by ending frame number
-#
+        frend           is the frame number *after* the last frame of the closing trace
+        trace_closing   is an open trace that is being closed off
+        """
+        super(region_trace_closed, self).__init__(trace_closing.frnum, trace_closing.rcoords)
+        self.frend = frend                          # End frame number
+        self.frlen = frend - trace_closing.frnum    # Overall frame extent (length) of trace 
+        self.xcen  = statistics.fmean( (rc.xcen for rc in trace_closing.rcoords) )
+        self.ycen  = statistics.fmean( (rc.ycen for rc in trace_closing.rcoords) )
+        self.xmin  = min( (rc.rpixels.xmin for rc in trace_closing.rcoords) )
+        self.ymin  = min( (rc.rpixels.ymin for rc in trace_closing.rcoords) )
+        self.xmax  = max( (rc.rpixels.xmax for rc in trace_closing.rcoords) )
+        self.ymax  = max( (rc.rpixels.ymax for rc in trace_closing.rcoords) )
+        self.area  = sum( (rc.area         for rc in trace_closing.rcoords) )
+        # log_debug("@@@ region_trace_closed.__init__", str(self))
+        return
 
-def region_overlaps(rc, rtrace):
-    # Determine if given region coords 'rc' overlaps with the region trace 'rtrace'.
-    #
-    if len(rtrace) == 0:
-        return False
-    rx = round(rc.xcen)
-    ry = round(rc.ycen)
-    r1 = rtrace['rcoords'][-1]         # Last position in trace
-    r1x = round(r1.xcen)
-    r1y = round(r1.ycen)
-    return ( ( (rx  >= r1.rpixels.xmin) and (rx  <= r1.rpixels.xmax) and
-               (ry  >= r1.rpixels.ymin) and (ry  <= r1.rpixels.ymax) ) or
-             ( (r1x >= rc.rpixels.xmin) and (r1x <= rc.rpixels.xmax) and
-               (r1y >= rc.rpixels.ymin) and (r1y <= rc.rpixels.ymax) ) 
-           )
+    def __str__(self):
+        return (
+            f"region_trace: frnum {self.frnum:4d}, frend {self.frend:4d}"
+            f", area {self.area}"
+            f", cent ({self.xcen},{self.ycen})"
+            )
+
+    def format_frame_coords(self, prefix):
+        """
+        Generator returns formatted region coordinates for frames in trace
+        """
+        for rc in self.rcoords:
+            yield (prefix+str(rc))
+        return
+
+    def draw(self, frame_show, frnum):
+        """
+        Draw trace in supplied video frame buffer
+
+        The trace is offset by the currenmt frame number so that it is moved to
+        the left when drawn in later frames
+        """
+        # NOTE colour channels are B,G,R:
+        # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+        colour_green = (0, 255, 0)
+        w    = (self.frend - self.frnum)*5      # Width of displayed trace
+        h    = self.area / w                    # Height of displayed trace
+        xoff = (self.frend - frnum)*5           # Offset position of displayed trace
+        # Display on;ly if fits in frame
+        if (w < 1000) and (self.xcen + xoff > 0):
+            x1   = round(self.xcen - w + xoff)
+            y1   = round(self.ycen - h/2)
+            x2   = round(self.xcen + xoff)
+            y2   = round(self.ycen + h/2)
+            cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_green, thickness=2)
+        return
 
 
 # Add a new frame of region coordinates to the currently open traces.
@@ -448,46 +505,19 @@ def region_overlaps(rc, rtrace):
 def region_trace_detect(frnum, frame_coords, open_traces):
     new_traces = []
     for rt in open_traces:
-        rt['frend'] = frnum                 # Assume closed unless extension seen
+        rt.start_next_frame(frnum)
     for rc in frame_coords:
         for rt in open_traces:
-            if region_overlaps(rc, rt):
-                rt['rcoords'].append(rc)    # Extend trace
-                rt['frend'] = -1            # Flag trace still open
+            if rt.region_overlaps_trace(rc):
+                rt.extend_trace(frnum, rc)
                 break # to next rc
         else:
-            nt = { 'frnum': frnum, 'frend': -1, 'rcoords': [rc] }
+            nt = region_trace_open(frnum, [rc])
             new_traces.append(nt)
-    # Separate out open/closed traces for result
-    ongoing_traces = [ rt for rt in open_traces if rt['frend'] < 0 ] + new_traces
-    ending_traces  = [ rt for rt in open_traces if rt['frend'] > 0 ]
-    return (ending_traces, ongoing_traces)
-
-# Add summary data to region traces.  This is used to add trace summary data when
-# newly ended traces are encountered
-#
-# rtraces   region traces to be summarized,  For each trace, defined fields are:
-#               frnum - start frame number
-#               frend - end frame number (NOTE: only closed traces should be provided)
-#               rcoords - per-frame region coordinates
-#
-# Returns list of summarized traces
-#
-# rtraces = region_trace_summary(rtraces)
-#
-def region_trace_summary(rtraces):
-    for rt in rtraces:
-        assert (rt['frend'] > 0), "Can't summarize open region trace"
-        rt['frlen'] = rt['frend'] - rt['frnum']
-        rt['xcen']  = statistics.fmean([ rc.xcen for rc in rt['rcoords'] ])
-        rt['ycen']  = statistics.fmean([ rc.ycen for rc in rt['rcoords'] ])
-        rt['xmin']  = min([ rc.rpixels.xmin for rc in rt['rcoords'] ]) 
-        rt['ymin']  = min([ rc.rpixels.ymin for rc in rt['rcoords'] ]) 
-        rt['xmax']  = max([ rc.rpixels.xmax for rc in rt['rcoords'] ]) 
-        rt['ymax']  = max([ rc.rpixels.ymax for rc in rt['rcoords'] ]) 
-        rt['area']  = sum([ rc.area for rc in rt['rcoords'] ])
-    return rtraces
-
+    # Separate out ongoing/closed traces for result
+    closed_traces  = [ region_trace_closed(frnum, rt) for rt in open_traces if rt.trace_closing() ]
+    ongoing_traces = [ rt for rt in open_traces if not rt.trace_closing() ] + new_traces
+    return (closed_traces, ongoing_traces)
 
 # Add newly ending traces to buffer of closed traces.
 #
@@ -506,23 +536,12 @@ def region_trace_add(frnum, ending_traces, closed_traces):
     closed_traces.extend(ending_traces)
     return closed_traces
 
-
 def draw_region_traces(frame_show, frnum, traces):
     # NOTE colour channels are B,G,R:
     # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_green = (0, 255, 0)
     for rt in traces:
-        w    = (rt['frend'] - rt['frnum'])*5
-        h    = rt['area'] / w
-        xoff = (rt['frend'] - frnum)*5
-        if (w < 1000) and (rt['xcen'] + xoff > 0):
-            x1   = round(rt['xcen'] - w + xoff)
-            y1   = round(rt['ycen'] - h/2)
-            x2   = round(rt['xcen'] + xoff)
-            y2   = round(rt['ycen'] + h/2)
-            cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_green, thickness=2)
+        rt.draw(frame_show, frnum)
     return
-
 
 # show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces)
 #
@@ -542,17 +561,13 @@ def show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, r
     return show_video_frame(frame_label, frame_number, frame_show)
 
 # Log list of region traces to console
-#
 def log_region_traces(frnum, traces):
-    log_info(f"frame {frnum:d} (trace)")
+    log_info("log_region_traces ", frnum)
     for rt in traces:
-        log_info(f"frnum {rt['frnum']:4d}, frend {rt['frend']:4d}")
-        for rc in rt['rcoords']:
-            log_info("  "+str(rc))
+        log_info(str(rt))
+        for rc_str in rt.format_frame_coords("  "):
+            log_info(rc_str)
     return
-
-def format_trace_summary(t):
-    return f"frnum {t['frnum']:4d}, frend {t['frend']:4d}, cent ({t['xcen']},{t['ycen']}, area {t['area']}"
 
 # Row methods
 #
@@ -639,16 +654,16 @@ def format_trace_summary(t):
 def find_trace_overlaps(trace, trace_set):
     def trace_overlaps(t1, t2):
         # NOTE: end frame is *after* last frame of trace
-        return (t1['frnum'] < t2['frend']) or (t2['frnum'] < t1['frend'])
+        return (t1.frnum < t2.frend) or (t2.frnum < t1.frend)
     ts_inc = []
     ts_exc = []
-    # print("@@@ find_trace_overlaps for", format_trace_summary(trace))
+    # print("@@@ find_trace_overlaps for", str(trace))
     for t in trace_set:
         if trace_overlaps(t, trace):
-            # print("@@@ overlaps  ", format_trace_summary(t))
+            # print("@@@ overlaps  ", str(t))
             ts_inc.append(t)
         else:
-            # print("@@@ no overlap", format_trace_summary(t))
+            # print("@@@ no overlap", str(t))
             ts_exc.append(t)
     # print("@@@ ts_inc", ts_inc)
     # print("@@@ ts_exc", ts_exc)
@@ -700,14 +715,14 @@ def trace_row_detect(frnum, row_params, trace_data):
     trace_subsets = []
     for t in trace_data:
         overlap_seen = False
-        print("@@@ tsoverlaps for ", format_trace_summary(t))
+        print("@@@ tsoverlaps for ", str(t))
         tsoverlaps = ( find_trace_overlaps(t, ts) for ts in trace_subsets )
         for oi, otss in enumerate(tsoverlaps):
             print("@@@ Trace overlap ", oi, ":")
             for ots in otss:
                 print("@@@ next ots")
                 for ot in ots:
-                    print(format_trace_summary(ot))
+                    print(str(ot))
         for i, (tsinc, tsexc) in enumerate(tsoverlaps):
             if tsinc: 
                 overlap_seen = True
@@ -724,7 +739,7 @@ def trace_row_detect(frnum, row_params, trace_data):
     for i, ts in enumerate(trace_subsets):
         print("@@@ Trace subset ", i, ":")
         for t in ts:
-            print(format_trace_summary(t))
+            print(str(t))
 
     # Find sets of traces that cannot be further extended
     updated_trace_data = trace_data.copy()
@@ -733,8 +748,8 @@ def trace_row_detect(frnum, row_params, trace_data):
     while True:
         tsi = None
         for i, ts in enumerate(trace_subsets):
-            maxlen = 2*min( (t['frlen']) for t in ts ) + FLA
-            maxbeg = min( (t['frend']) for t in ts )
+            maxlen = 2*min( (t.frlen) for t in ts ) + FLA
+            maxbeg = min( (t.frend) for t in ts )
             if frnum >= maxbeg+maxlen:
                 tsi = i
                 break
@@ -742,9 +757,9 @@ def trace_row_detect(frnum, row_params, trace_data):
         if tsi != None:
             tsrow = trace_subsets.pop(tsi)
             # Have row candidate: eliminate non-eligible traces per [B1]
-            medlen = statistics.median( (t['frlen'] for t in tsrow) )
+            medlen = statistics.median( (t.frlen for t in tsrow) )
             for t in tsrow:
-                if t['frlen'] > 2*medlen:
+                if t.frlen > 2*medlen:
                     tsrow.remove(t)
                 if t in updated_trace_data:
                     updated_trace_data.remove(t)
@@ -762,14 +777,14 @@ def trace_row_detect(frnum, row_params, trace_data):
 def draw_rows(frame_show, frnum, rows, colour_border, colour_fill):
     for row in rows:
         for rt in row['traces']:
-            w    = (rt['frend'] - rt['frnum'])*5
-            h    = rt['area'] / w
-            xoff = (rt['frend'] - frnum)*5
-            if (w < 1000) and (rt['xcen'] + xoff > 0):
-                x1   = round(rt['xcen'] - w + xoff)
-                y1   = round(rt['ycen'] - h/2)
-                x2   = round(rt['xcen'] + xoff)
-                y2   = round(rt['ycen'] + h/2)
+            w    = (rt.frend - rt.frnum)*5
+            h    = rt.area / w
+            xoff = (rt.frend - frnum)*5
+            if (w < 1000) and (rt.xcen + xoff > 0):
+                x1   = round(rt.xcen - w + xoff)
+                y1   = round(rt.ycen - h/2)
+                x2   = round(rt.xcen + xoff)
+                y2   = round(rt.ycen + h/2)
                 cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill,   thickness=cv.FILLED)
                 cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
     return
@@ -796,7 +811,7 @@ def log_rows(frnum, rows):
     for i, row in enumerate(rows):
         log_info("Frame {frnum:d}, row {i:d}")
         for rt in row['traces']:
-            log_info(f"frnum {rt['frnum']:4d}, frend {rt['frend']:4d}, cent ({rt['xcen']},{rt['ycen']}, area {rt['area']}")
+            log_info(f"frnum {rt.frnum:4d}, frend {rt.frend:4d}, cent ({rt.xcen},{rt.ycen}, area {rt.area}")
 
 # show_region_traces_rows(frame_label, frame_number, frame_data, rcoords, rtraces)
 #
@@ -897,10 +912,10 @@ def main():
             filtered_region_coords_list = filter_region_coordinates(region_coords_list)
 
             # Display coords
-            frame_show_coords = show_video_frame_mask_centroids(
-                "Centroids", frame_number, frame_highlights, 
-                filtered_region_coords_list
-                )
+            # frame_show_coords = show_video_frame_mask_centroids(
+            #     "Centroids", frame_number, frame_highlights, 
+            #     filtered_region_coords_list
+            #     )
 
             log_debug("Frame (filtered)", frame_number)
             for c in filtered_region_coords_list:
@@ -909,10 +924,14 @@ def main():
 
             # Coalesce regions from successive frames into region traces
             new_traces, open_traces = region_trace_detect(frame_number, filtered_region_coords_list, open_traces)
-            new_traces = region_trace_summary(new_traces)
             closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
 
+            # Show closed region traces
             log_region_traces(frame_number, new_traces)
+            frame_show_traces = show_video_frame_mask_region_traces(
+                "Traces", frame_number, frame_highlights, 
+                filtered_region_coords_list, closed_traces
+                )
 
             # Group traces into rows
             row_traces = region_trace_add(frame_number, new_traces, row_traces)
