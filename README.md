@@ -27,3 +27,12 @@ Then:
 
     python video-04-region-coords.py --input=20210914-monotype-tape-reader.mov
 
+
+## Video output
+
+App creates `outpuyt.avi`.  Approx 100Kb/frame.
+
+Conversion to .m4v reduces size: use Final Cut pro; import media -> share -> export file.
+
+
+
