@@ -11,7 +11,18 @@ import statistics
 import functools
 import sys
 
-# Log/debug functions
+
+# ===================================================== #
+# == Constants ======================================== #
+# ===================================================== #
+
+ROW_FRAME_LOOKAHEAD = 4             # Frame lookahead when determining end of row
+
+FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
+
+# ===================================================== #
+# == Log/debug functions ============================== #
+# ===================================================== #
 
 def log_error(*args):
     print("ERROR", *args)
@@ -26,8 +37,47 @@ def log_debug(*args):
     print(*args)
     pass
 
+# ===================================================== #
+# == Coordinate mapping functions ===================== #
+# ===================================================== #
 
-# Video I/O functions
+# These functions are used to map frame-derived coordinates into pixel
+# coordinates used for the video outputs.
+
+# h = self.area / map_frame_len(self.frend-self.frnum) # Height of displayed trace
+# x1, y1 = map_frame_coords(frnow, self.frnum, self.xcen, self.ycen-h/2)
+
+def map_frame_len(frlen):
+    """
+    Convert display frame range to pixel range
+
+    frlen           (integer) is an frame length (duration) value
+
+    Returns:        (integer) the display width in pixels corresponding to `frlen`
+    """
+    return frlen * FRAME_WIDTH_X
+
+def map_frame_pos(frnow, frnum, x, y):
+    """
+    Map x,y position at some historical frame number to x,y pixel coordinates for
+    display.  Older frames are shifted to provide a visualization of advancing time
+    that very loosely relates to the motion of the tape being scanned.
+
+    frnow           (integer) current frame number.
+    frnum           (integer) frame number relating to the coordinate value to be mapped.
+    x               (float) X coordinate to be mapped
+    y               (float) Y coordinate to be mapped
+
+    Returns:        x,y coordinate pair for the position of the supplied coordinate, 
+                    adjusted for the passage of time (video frames)
+    """
+    x1 = round(x + (frnum-frnow)*FRAME_WIDTH_X)
+    y1 = round(y)
+    return (x1, y1)
+
+# ===================================================== #
+# == Video I/O functions ============================== #
+# ===================================================== #
 
 def open_video_input(filepath):
     # Open video for reading
@@ -100,7 +150,7 @@ def show_video_frame_mask(frame_label, frame_number, frame_data):
 
 def draw_region_centroids(frame_show, centroid_data):
     for a in centroid_data:
-        print(str(a))
+        # print("@@@ draw_region_centroids: ", str(a))
         a.draw(frame_show)
     return
 
@@ -124,7 +174,9 @@ def close_video_windows():
     return
 
 
-# Video processing pipeline classes and functions
+# ===================================================== #
+# == Video processing pipeline classes and functions == #
+# ===================================================== #
 
 # ----------------------------------------- #
 # -- region_frame_pixels ------------------ #
@@ -153,7 +205,6 @@ class region_frame_pixels(object):
             f", X ({self.xmin:4d}..{self.xmax:<4d}), "
             f", Y ({self.ymin:4d}..{self.ymax:<4d}), "
             )
-
 
 def convert_frame_to_greyscale(frame):
     """
@@ -329,7 +380,7 @@ class region_frame_centroid(object):
     def get_centroid(self):
         return (self.xcen, self.ycen)
 
-    def regions_overlap(self, r2):
+    def overlaps(self, r2):
         """
         Test for supplied region overlaps with current region.
 
@@ -389,20 +440,20 @@ class region_trace_open(region_trace):
         self.closing = False
         return
 
-    def region_overlaps_trace(self, rc):
+    def overlaps_region(self, rtry):
         """
-        Determine if given region 'rc' overlaps with the current region trace
+        Determine if supplied region overlaps with the current region trace
 
-        rc              a `region_frame_centroid` value that is to be tested.
+        rtry              a `region_frame_centroid` value that is to be tested.
 
         returns:        True if the supplied region coordinates overlap the
                         final frame of the current region trace.
         """
-        # log_debug("@@@ region_overlaps_trace ", self.frnum, len(self.rcoords))
+        # log_debug("@@@ overlaps_region ", self.frnum, len(self.rcoords))
         if len(self.rcoords) == 0:
             return False
-        rt  = self.rcoords[-1]          # Last position in trace
-        return rt.regions_overlap(rc)
+        rend = self.rcoords[-1]         # Last position in trace
+        return rend.overlaps(rtry)
 
     def start_next_frame(self, frnum):
         """
@@ -453,11 +504,29 @@ class region_trace_closed(region_trace):
         # log_debug("@@@ region_trace_closed.__init__", str(self))
         return
 
+    def overlaps_trace_frames(self, rtry):
+        """
+        Determine if supplied region trace overlaps temporally (shares any frames) 
+        with the current region trace
+
+        rtry            a `region_trace_closed` value that is to be tested.
+
+        returns:        True if the supplied region trace coordinates overlap the
+                        current region trace.
+        """
+        # NOTE: end frame is *after* last frame of trace, so using '<' not '<='
+        return (self.frnum < rtry.frend) and (rtry.frnum < self.frend)
+
     def __str__(self):
         return (
             f"region_trace: frnum {self.frnum:4d}, frend {self.frend:4d}"
             f", area {self.area}"
-            f", cent ({self.xcen},{self.ycen})"
+            f", cent ({self.xcen:6.1f},{self.ycen:6.1f})"
+            )
+
+    def short_str(self):
+        return (
+            f"trace: frames {self.frnum:d}::{self.frend:d}, area {self.area}"
             )
 
     def format_frame_coords(self, prefix):
@@ -468,28 +537,39 @@ class region_trace_closed(region_trace):
             yield (prefix+str(rc))
         return
 
-    def draw(self, frame_show, frnum):
+    def draw(self, frame_show, frnow, colour_border):
         """
         Draw trace in supplied video frame buffer
 
-        The trace is offset by the currenmt frame number so that it is moved to
-        the left when drawn in later frames
-        """
-        # NOTE colour channels are B,G,R:
-        # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-        colour_green = (0, 255, 0)
-        w    = (self.frend - self.frnum)*5      # Width of displayed trace
-        h    = self.area / w                    # Height of displayed trace
-        xoff = (self.frend - frnum)*5           # Offset position of displayed trace
-        # Display on;ly if fits in frame
-        if (w < 1000) and (self.xcen + xoff > 0):
-            x1   = round(self.xcen - w + xoff)
-            y1   = round(self.ycen - h/2)
-            x2   = round(self.xcen + xoff)
-            y2   = round(self.ycen + h/2)
-            cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_green, thickness=2)
-        return
+        The trace is offset by the current frame number so that it is moved to
+        the left when drawn in later frames.
 
+        frame_show      OpenCV video output buffer for displayed value
+        frnow           (integer) current frame number
+        colour_border   Colour value for displaying border of area covered trace 
+        """
+        h = self.area / map_frame_len(self.frend-self.frnum)    # Height for displayed trace
+        x1, y1 = map_frame_pos(frnow, self.frnum, self.xcen, self.ycen-h/2)
+        x2, y2 = map_frame_pos(frnow, self.frend, self.xcen, self.ycen+h/2)
+        cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+        #@@@@@@@@@@@
+        # # NOTE colour channels are B,G,R:
+        # # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+        # colour_green = (0, 255, 0)
+        # FOX = FRAME_OFFSET_X
+        # colour_green = (0, 255, 0)
+        # w    = (self.frend - self.frnum)*FOX    # Width of displayed trace
+        # h    = self.area / w                    # Height of displayed trace
+        # xoff = (self.frend - frnum)*FOX         # Offset position of displayed trace
+        # # Display only if fits in frame
+        # if (w < 1000) and (self.xcen + xoff > 0):
+        #     x1   = round(self.xcen - w/2 + xoff)
+        #     y1   = round(self.ycen - h/2)
+        #     x2   = round(self.xcen + w/2 + xoff)
+        #     y2   = round(self.ycen + h/2)
+        #     cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_green, thickness=2)
+        #@@@@@@@@@@@
+        return
 
 # Add a new frame of region coordinates to the currently open traces.
 # Any traces that are terminated in this frame are returned as a separate
@@ -508,7 +588,7 @@ def region_trace_detect(frnum, frame_coords, open_traces):
         rt.start_next_frame(frnum)
     for rc in frame_coords:
         for rt in open_traces:
-            if rt.region_overlaps_trace(rc):
+            if rt.overlaps_region(rc):
                 rt.extend_trace(frnum, rc)
                 break # to next rc
         else:
@@ -539,8 +619,9 @@ def region_trace_add(frnum, ending_traces, closed_traces):
 def draw_region_traces(frame_show, frnum, traces):
     # NOTE colour channels are B,G,R:
     # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+    colour_green = (0, 255, 0)
     for rt in traces:
-        rt.draw(frame_show, frnum)
+        rt.draw(frame_show, frnum, colour_green)
     return
 
 # show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces)
@@ -569,105 +650,217 @@ def log_region_traces(frnum, traces):
             log_info(rc_str)
     return
 
-# Row methods
-#
-# A row is a set of closed traces that are assessed as representing a row of holes
-# in the tape.
-#
-# Representation for a closed trace
-#       { 
-#         frnum:   (integer)            # Start frame number
-#         frend:   (integer)            # End frame number, or -1 if still open
-#         rcoords: [(region_coords)]    # region coords for each region in trace
-#                                       # - index +frnum to get actual frame number
-#         frlen:    (integer),          # Overall frame extent (length) of trace 
-#         xcen:     (float),            # Mean X position
-#         ycen:     (float),            # Mean Y position 
-#         xmin:     (integer),          # Overall min X coord
-#         ymin:     (integer),          # Overall min Y coord
-#         xmax:     (integer),          # Overall max X coord
-#         ymax:     (integer),          # Overall max Y coord
-#         area:     (integer),          # Total area summed over all frames
-#         # Added when/after a row is detected?
-#         hpos:     (float)             # Hole position ('k' in constraints below)
-#       }
-#
-# A row is a (maximal) set of traces (approximately) satisfying the followjng constraints:
-#
-# [A]: P[frbeg] < Q[frend] 
-#   - for all traces P and Q in a row.  
-#     No trace in a row can start after another has ended; all traces in a row overlap 
-#     in at least one frame.
-#     This is used as a basis for determining that no further traces can be added to
-#     to a row, assuming that traces are presented in order of (ending) frame number.
-#
-# [B1]: P[frlen] < 2*Median(Q[frlen])
-#   - for all traces P and Q in a row.  
-#     No trace may be longer than twice the median length of other traces in a row.
-#     The intent is to eliminate extended traces that don't correspond to tape holes, 
-#     based on the assumption that all traces in a row will be of similar duration.
-#
-# [B2]: P[frlen] < 2*Q[frlen]+FLA
-#   - for all traces P and Q in a row.  
-#     While row data is incomplete, the median length of traces cannot be known.
-#     This constraint provides a very rough estimator for assessing whether there might be
-#     more traces to add, using the minimum trace length seen as a lower bound for the median.
-#   
-#     The "+FLA" is to avoid false row endings when a very short trace is present: the assumption here
-#     is that if an exceptional short trace is present, more representative traces will be encountered 
-#     within the FL additional frames.  This effectively forces a degree of lookahead in the incoming
-#     traces before declaring that a row is complete.
-#
-# [C]: each row contains least 3 traces.
-#     A valid Monotype tape row has at least 4 holes: 2 sprocket holes and 2 data holes.  The minimum
-#     of 3 allows for one of the sprocket holes to be missed.  Any putative row with fewer than 3 traces
-#     should be logged and disregarded.
-#
-# [D]: (P[xcen], P[ycen]) = (xbase + k*xspan, ybase + k*yspan); 0 <= k <= 1
-#   - for all traces P in a row, where xbase, ybase, xspan, yspan are the same for each such P.
-#     This effectively requires that the traces in a row sit on a line, at multiples of some unit 
-#     separation distance.  
-#     If (xbase,ybase) represents one of the sprocket holes, then (xspan,yspan) represents 
-#     the offset to the sprocket hole on the other side of the tape.  
-#     NOTE: sprocket holes are approx 5mm from data holes; data hole spacing is approx 3mm.
-#
-# These constraints are designed to allow a RANSAC-like algorithm [1] to be used to separate real
-# data from noise (traces not corresponding to tape holes), without making assumptions about the
-# camera orientation (may be skewed) or speed at which the tape is being drawn over the reader bar.
-# In this application it is possible that the total number of traces under consideration at any time 
-# is small enough to allow an exhaustive search rather than random sampling.
-#
-# [1] https://en.wikipedia.org/wiki/Random_sample_consensus
-#
-# ----------
+# ===================================================== #
+# == Row detection classes and methods ================ #
+# ===================================================== #
 
-# Find overlapping and non-overlapping traces
-#
-# trace                 a single trace to be tested
-# trace_set             a set of traces with which the supplied trace is compared
-#
-# Returns:  (trace_inc, trace_exc)
-#
-# trace_inc             list of elements in `trace_set` that overlaps with `trace`
-# trace_exc             list of elements in `trace_set` that does not overlap with `trace`
-#
-def find_trace_overlaps(trace, trace_set):
-    def trace_overlaps(t1, t2):
-        # NOTE: end frame is *after* last frame of trace
-        return (t1.frnum < t2.frend) or (t2.frnum < t1.frend)
-    ts_inc = []
-    ts_exc = []
-    # print("@@@ find_trace_overlaps for", str(trace))
-    for t in trace_set:
-        if trace_overlaps(t, trace):
-            # print("@@@ overlaps  ", str(t))
-            ts_inc.append(t)
-        else:
-            # print("@@@ no overlap", str(t))
-            ts_exc.append(t)
-    # print("@@@ ts_inc", ts_inc)
-    # print("@@@ ts_exc", ts_exc)
-    return (ts_inc, ts_exc)
+# A row is a set of closed traces that are assessed as representing a 
+# row of holes in the Monotype tape.
+
+# ----------------------------------------- #
+# -- region_trace_set --------------------- #
+# ----------------------------------------- #
+
+FLA = ROW_FRAME_LOOKAHEAD       # Frame lookahead when determining end of row
+
+class region_trace_set(object):
+    """
+    Represents a set of region traces that overlap in time (i.e. frame number).   
+    This is used for the detection of rows of region traces.
+
+    For region traces P and Q, we have:
+
+    P.frbeg, Q.frbeg        are the first frame number in which the traces appear
+    P.frend, Q.frend        are the first frame after the final frame in which the traces appear
+    P.frlen, Q.frlen        are the number of consecutive frames in the traces appear
+
+    E.g.    P......>
+            <======> P.frlen
+            ^       ^ 
+            |       | 
+            |       + P.frend 
+            |
+            + P.frbeg
+
+    A row is a (maximal) set of traces (approximately) satisfying the following constraints:
+
+
+    [A]: P.frbeg < Q.frend 
+      - for all traces P and Q in a row.  
+        No trace in a row can start after another has ended; all traces in a row overlap 
+        in at least one frame.  This is used as a basis for determining that no further 
+        traces can be added to a row, assuming that traces are presented in order.
+
+    [B1]: P.frlen < 2*Median(Q.frlen)
+      - for all traces P and Q in a row.  
+        No trace may be longer than twice the median length of other traces in a row.
+        The intent is to eliminate extended traces that don't correspond to tape holes, 
+        based on the assumption that all traces in a row will be of similar duration.
+
+    [B2]: P.frlen < 2*Q.frlen+FLA
+      - for all traces P and Q in a row.  
+        While row data is incomplete, the median length of all traces cannot be known.
+        This constraint provides a very rough estimator for assessing whether there might be
+        more traces to add, using the minimum trace length seen as a lower bound for the median.
+      
+        The "+FLA" is to avoid false row endings when a very short trace is present: the assumption here
+        is that if an exceptional short trace is present, more representative traces will be encountered 
+        within the FL additional frames.  This effectively forces a degree of lookahead in the incoming
+        traces before declaring that a row is complete.
+
+    [C]: each row contains least 3 traces.
+        A valid Monotype tape row has at least 4 holes: 2 sprocket holes and at least 2 data holes.  
+        The minimum of 3 allows for one of the sprocket holes to be missed.  (Any putative row with 
+        fewer than 3 traces is logged and disregarded.)
+
+    [D]: (P.xcen, P.ycen) = (xbase + k*xspan, ybase + k*yspan); 0 <= k <= 1
+      - for all traces P in a row, where xbase, ybase, xspan, yspan are the same for each such P.
+
+        This effectively requires that the traces in a row sit spatially on a line, at multiples 
+        of some unit separation distance.  
+
+        If (xbase,ybase) represents one of the sprocket holes, then (xspan,yspan) represents 
+        the offset to the sprocket hole on the other side of the tape.  
+
+        NOTE: sprocket holes are approx 5mm from data holes; data hole spacing is approx 3mm.
+
+    These constraints are designed to allow a RANSAC-like algorithm [1] to be used to separate real
+    data from noise (traces not corresponding to tape holes), without making assumptions about the
+    camera orientation (may be skewed) or speed at which the tape is being drawn over the reader bar.
+    In this application it is possible that the total number of traces under consideration at any time 
+    is small enough to allow an exhaustive search rather than random sampling.
+
+    [1] https://en.wikipedia.org/wiki/Random_sample_consensus
+    """
+
+    def __init__(self, trace_set=None, trace=None):
+        """
+        Initialize new region_trace_set.
+
+        trace_set       if present, is a list of `region_trace_closed` values that are
+                        added to the newly created `region_trace_set`.  
+                        (cf. result from `find_trace_overlaps`.)
+        trace           if present, is a `region_trace_closed` valuer that is added to the
+                        newly created `region_trace_set`.
+        """
+        self.rtraces  = []                      # List of region traces in set
+        self.maxfrbeg = 0                       # Maximum trace start frame
+        self.minfrend = sys.maxsize             # Minimum trace end frame
+        self.minfrlen = sys.maxsize             # Minimum frame length of any trace
+        self.xmin     = sys.maxsize             # Region covering all traces ..
+        self.ymin     = sys.maxsize
+        self.xmax     = 0
+        self.ymax     = 0
+        if trace_set != None:
+            for t in trace_set:
+                self.add_trace(t)
+        if trace:
+            self.add_trace(trace)
+        return
+
+    def __iter__(self):
+        """
+        Return iterator over members of the trace set
+        """
+        return iter(self.rtraces)
+
+    def __len__(self):
+        # See https://stackoverflow.com/a/15114062/324122
+        return len(self.rtraces)
+
+    def __str__(self):
+        return ("trace_subset: " + self.short_str())
+
+    def short_str(self):
+        return (
+            f"maxfrbeg {self.maxfrbeg:d}"
+            f", minfrend {self.minfrend:d}, minfrlen {self.minfrlen:d}"
+            f", num traces  {len(self.rtraces):d}"
+            )
+
+    def draw(self, frame_show, frnow, colour_border, colour_fill):
+        """
+        Draw background shading connecting traces in set (row)
+        """
+        xcen = (self.xmin + self.xmax) / 2
+        x1, y1 = map_frame_pos(frnow, self.maxfrbeg, xcen, self.ymin )
+        x2, y2 = map_frame_pos(frnow, self.minfrend, xcen, self.ymax)
+        cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill, thickness=cv.FILLED)
+        # cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+
+        #@@@@@@@@@@@
+        # w    = (self.minfrend - self.maxfrbeg)*5
+        # xoff = (self.minfrend - frnum)*5
+        # if (w < 1000) and (self.xmin + xoff > 0):
+        #     x1   = round(self.xmin + xoff)
+        #     y1   = round(self.ymin)
+        #     x2   = round(self.xmax + xoff)
+        #     y2   = round(self.ymax)
+        #     cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill,   thickness=cv.FILLED)
+        #     cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+        #@@@@@@@@@@@
+
+        return
+
+    def log_trace_set(self, logmethod=print, prefix="", t_prefix="    "):
+        logmethod(prefix, self.short_str())
+        for t in self.rtraces:
+            logmethod(t_prefix+t.short_str())
+        return
+
+    def add_trace(self, trace):
+        """
+        Adds a new region trace to the current trace set
+        """
+        self.maxfrbeg = max(self.maxfrbeg, trace.frnum)
+        self.minfrend = min(self.minfrend, trace.frend)
+        self.minfrlen = min(self.minfrlen, trace.frlen)
+        self.xmin     = min(self.xmin, trace.xmin)
+        self.ymin     = min(self.ymin, trace.ymin)
+        self.xmax     = max(self.xmax, trace.xmax)
+        self.ymax     = max(self.ymax, trace.ymax)
+        self.rtraces.append(trace)
+        return self
+
+    def remove_trace(self, trace):
+        """
+        Remove a region trace from the current trace set
+        """
+        if trace in self.rtraces:
+            self.rtraces.remove(trace)
+        return self
+
+    def find_trace_overlaps(self, trace):
+        """
+        For a supplied trace, find overlapping and non-overlapping traces in the
+        current trace set.
+        
+        trace                 a trace to be tested
+        
+        Returns:  (trace_inc, trace_exc)
+        
+        trace_inc             list of elements in the current set that overlap with `trace`
+        trace_exc             list of elements in the current set that do not overlap with `trace`
+        """
+
+        # def trace_overlaps(t1, t2):
+        #     # NOTE: end frame is *after* last frame of trace
+        #     return (t1.frnum < t2.frend) or (t2.frnum < t1.frend)
+        ts_inc = []
+        ts_exc = []
+        print("@@@ find_trace_overlaps for ", str(trace), " from ", len(self.rtraces), " traces")
+        if len(self.rtraces) > 20:
+            raise ValueError("Too many (>20) unallocated traces")
+        for t in self.rtraces:
+            if t.overlaps_trace_frames(trace):
+                # print("@@@ overlaps  ", str(t))
+                ts_inc.append(t)
+            else:
+                # print("@@@ no overlap", str(t))
+                ts_exc.append(t)
+        # print("@@@ ts_inc", [t.short_str() for t in ts_inc])
+        # print("@@@ ts_exc", [t.short_str() for t in ts_exc])
+        return (ts_inc, ts_exc)
 
 # Look for completed row of tape data in trace data.
 #
@@ -708,103 +901,115 @@ def find_trace_overlaps(trace, trace_set):
 # updated_trace_data    is the supplied trace data excluding any region traces that have been detected 
 #                       as belonging to a completed row, or determined to be not belonging to any row.
 #
-FLA = 4         # Frame lookahead when determining end of row
 def trace_row_detect(frnum, row_params, trace_data):
     # Find all maximal subsets of overlapping traces (sharing at least one frame)
     # (maximal => no other item in trace_data overlaps with any member of set)
+
+    global paused, step
+    # print(f"@@@ trace_row_detect(frnum {frnum:d}, row_params, trace_data): {len(trace_data):d} traces")
+
     trace_subsets = []
     for t in trace_data:
         overlap_seen = False
-        print("@@@ tsoverlaps for ", str(t))
-        tsoverlaps = ( find_trace_overlaps(t, ts) for ts in trace_subsets )
-        for oi, otss in enumerate(tsoverlaps):
-            print("@@@ Trace overlap ", oi, ":")
-            for ots in otss:
-                print("@@@ next ots")
-                for ot in ots:
-                    print(str(ot))
+        # print(f"@@@ trace overlaps for {str(t):s}, len(trace_data) {len(trace_data):d}")
+        tsoverlaps = [ ts.find_trace_overlaps(t) for ts in trace_subsets ]
+        # for oi, (otsinc, otsexc) in enumerate(tsoverlaps):
+        #     print("@@@ Trace overlap ", oi, ": inc ", len(otsinc), ", exc ", len(otsexc) )
+        #     for otinc in otsinc:
+        #         print("@@@ next otinc", str(otinc))
+        #     for otexc in otsexc:
+        #         print("@@@ next otexc", str(otexc))
         for i, (tsinc, tsexc) in enumerate(tsoverlaps):
             if tsinc: 
                 overlap_seen = True
                 if tsexc:
                     # Partial overlap: new subset with new trace
-                    trace_subsets.append(tsinc.append(t))
+                    trace_subsets.append(region_trace_set(trace_set=tsinc, trace=t))
                 else:
                     # Full overlap: add to existing subset
-                    trace_subsets[i] = trace_subsets[i].append(t)
+                    trace_subsets[i] = trace_subsets[i].add_trace(t)
         if not overlap_seen:
                 # No overlap - new singleton sub set
-                trace_subsets.append([t])
+                trace_subsets.append(region_trace_set(trace=t))
 
+    print(f"@@@ number of trace subsets {len(trace_subsets):d}")
     for i, ts in enumerate(trace_subsets):
-        print("@@@ Trace subset ", i, ":")
-        for t in ts:
-            print(str(t))
+        ts.log_trace_set(print, prefix=f"@@@ Trace subset {i:d}: ")
 
     # Find sets of traces that cannot be further extended
     updated_trace_data = trace_data.copy()
     updated_row_params = row_params.copy()
     new_rows = []
-    while True:
+    # while True:
+    for limit_counter in range(len(trace_subsets)):     # Each pass should remove one subset, or break out
         tsi = None
         for i, ts in enumerate(trace_subsets):
-            maxlen = 2*min( (t.frlen) for t in ts ) + FLA
-            maxbeg = min( (t.frend) for t in ts )
+            # maxlen = 2*min( (t.frlen) for t in ts ) + FLA
+            # maxbeg = min( (t.frend) for t in ts )
+            maxlen = 2*ts.minfrlen + FLA
+            maxbeg = ts.minfrend
             if frnum >= maxbeg+maxlen:
                 tsi = i
                 break
         # Test possible row candidate
         if tsi != None:
-            tsrow = trace_subsets.pop(tsi)
+            print(f"@@@ Candidate row trace subset {tsi:d}")
+            row_trace_set = trace_subsets.pop(tsi)
             # Have row candidate: eliminate non-eligible traces per [B1]
-            medlen = statistics.median( (t.frlen for t in tsrow) )
-            for t in tsrow:
+            # Also remove trace from traces to be carried forward.
+            medlen = statistics.median( (t.frlen for t in row_trace_set) )
+            for t in row_trace_set:
                 if t.frlen > 2*medlen:
-                    tsrow.remove(t)
+                    row_trace_set.remove_trace(t)
                 if t in updated_trace_data:
                     updated_trace_data.remove(t)
-            if len(tsrow) < 3:
+            if len(row_trace_set) < 3:
                 log_warning("About frame ", frnum, ": insufficient traces for row")
-                log_region_traces(frnum, tsrow)
+                log_region_traces(frnum, row_trace_set)
             else:
-                new_rows.append( {'params': row_params, 'traces': tsrow} )
+                print(f"@@@ New row trace subset {i:d}")
+                new_rows.append(row_trace_set)
         else:
             # No more candidates
             break
 
+    print(f"@@@ traces in {len(trace_data):d}, out {len(updated_trace_data):d}, new_rows {len(new_rows):d}")
+
     return (new_rows, updated_row_params, updated_trace_data)
 
-def draw_rows(frame_show, frnum, rows, colour_border, colour_fill):
+def draw_rows(frame_show, frnum, rows, colour_border, colour_fill1, colour_fill2=None):
+    colour_fill, colour_fill_next = (colour_fill1, colour_fill2 or colour_fill1)
     for row in rows:
-        for rt in row['traces']:
-            w    = (rt.frend - rt.frnum)*5
-            h    = rt.area / w
-            xoff = (rt.frend - frnum)*5
-            if (w < 1000) and (rt.xcen + xoff > 0):
-                x1   = round(rt.xcen - w + xoff)
-                y1   = round(rt.ycen - h/2)
-                x2   = round(rt.xcen + xoff)
-                y2   = round(rt.ycen + h/2)
-                cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill,   thickness=cv.FILLED)
-                cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+        row.draw(frame_show, frnum, colour_border, colour_fill)
+        # for rt in row['traces']:
+        #     w    = (rt.frend - rt.frnum)*5
+        #     h    = rt.area / w
+        #     xoff = (rt.frend - frnum)*5
+        #     if (w < 1000) and (rt.xcen + xoff > 0):
+        #         x1   = round(rt.xcen - w + xoff)
+        #         y1   = round(rt.ycen - h/2)
+        #         x2   = round(rt.xcen + xoff)
+        #         y2   = round(rt.ycen + h/2)
+        #         cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill,   thickness=cv.FILLED)
+        #         cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
+        colour_fill, colour_fill_next = (colour_fill_next, colour_fill)
     return
 
 def draw_new_rows(frame_show, frnum, rows):
     # NOTE colour channels are B,G,R:
     # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_trace = (  0, 255,   0)  # Green
-    colour_new   = (255, 255,   0)  # Cyan
-    colour_old   = (128, 128,   0)  # Teal
+    colour_trace = (204, 255, 204)  # Light green
+    colour_new   = (102, 255, 255)  # Light yellow
     draw_rows(frame_show, frnum, rows, colour_trace, colour_new)
     return
 
 def draw_old_rows(frame_show, frnum, rows):
     # NOTE colour channels are B,G,R:
     # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_trace = (  0, 255,   0)  # Green
-    colour_new   = (255, 255,   0)  # Cyan
-    colour_old   = (128, 128,   0)  # Teal
-    draw_rows(frame_show, frnum, rows, colour_trace, colour_old)
+    colour_trace = (  0, 102,   0)  # Green
+    colour_old1  = (102, 102,   0)  # Yellow/green colour old rows (odd)
+    colour_old2  = (  0, 102, 102)  # Blue/green   colour old rows (even)
+    draw_rows(frame_show, frnum, rows, colour_trace, colour_old1, colour_old2)
     return
 
 def log_rows(frnum, rows):
@@ -829,9 +1034,9 @@ def show_video_frame_mask_region_traces_rows(frame_label, frame_number, frame_da
     # Display mask frame with centroid data, and return displayed frame value
     frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
     draw_region_centroids(frame_show, rcoords)
-    draw_region_traces(frame_show, frame_number, rtraces)
     draw_new_rows(frame_show, frame_number, new_rows)
     draw_old_rows(frame_show, frame_number, old_rows)
+    draw_region_traces(frame_show, frame_number, rtraces)
     return show_video_frame(frame_label, frame_number, frame_show)
 
 ###### Main program ######
@@ -928,10 +1133,10 @@ def main():
 
             # Show closed region traces
             log_region_traces(frame_number, new_traces)
-            frame_show_traces = show_video_frame_mask_region_traces(
-                "Traces", frame_number, frame_highlights, 
-                filtered_region_coords_list, closed_traces
-                )
+            # frame_show_traces = show_video_frame_mask_region_traces(
+            #     "Traces", frame_number, frame_highlights, 
+            #     filtered_region_coords_list, closed_traces
+            #     )
 
             # Group traces into rows
             row_traces = region_trace_add(frame_number, new_traces, row_traces)
@@ -940,11 +1145,11 @@ def main():
             # log_rows(frame_number, new_rows)
 
             # Show row traces
-            # frame_show_traces = show_video_frame_mask_region_traces_rows(
-            #     "Rows", frame_number, frame_highlights, 
-            #     filtered_region_coords_list, closed_traces,
-            #     new_rows, old_rows
-            #     )
+            frame_show_traces = show_video_frame_mask_region_traces_rows(
+                "Rows", frame_number, frame_highlights, 
+                filtered_region_coords_list, closed_traces,
+                new_rows, old_rows
+                )
             old_rows.extend(new_rows)
             new_rows = []
 
