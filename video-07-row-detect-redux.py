@@ -40,7 +40,8 @@ FRAME_WIDTH_X       = 5             # X pixel length for displaying historical f
 # When the tape moves slowly, residuals tend to be larger, but holes in a row usually 
 # all appear in at least one frame.
 
-MAX_ADD_RESIDUAL    = 0.5           # Max squared residual for adding trace to row
+MAX_ADD_RESIDUAL    = 0.6           # Max squared residual for adding trace to row
+                                    # (0.5 too small, 2.0 too large)
 
 MAX_ROW_RESIDUAL    = 2.0           # Max residual for accepting trace residual as row
 
@@ -1079,11 +1080,11 @@ class row_candidate(object):
             return False        # Trace already in this row candidate
         traces   = region_trace_set(trace_set=self.traces, trace=trace)
         residual = self._estimate_linear_fit_residual(traces)
-        if residual <= MAX_ROW_RESIDUAL:
+        log_info(f"row_additional_trace: residual {residual:6.3f}")
+        log_info(trace.long_str(prefix="    trace: "))
+        if residual <= MAX_ADD_RESIDUAL:
             # Add trace to row
-            log_info(f"row_additional_trace: residual {residual:6.3f}")
-            log_info(trace.short_str(prefix="  adding trace: "))
-            log_info(self.long_str(prefix="  to ", t_prefix="    "))
+            log_info(self.long_str(prefix="  adding to ", t_prefix="    "))
             self.traces.add_trace(trace)
             self.residual = residual
             return True
@@ -1473,12 +1474,13 @@ def main():
             if frame is None:
                 break
 
+            start_frame = 0
+            if frame_number < start_frame:
+                continue
+
             pause_frames = (
-                { # 790, 800, 820, 840, 1000
-                , 1130, 1150
-                , 2210
-                , 3100, 3210, 3370
-                , 5360, 5650, 5950, 5980
+                { 3077, 3160, 3210, 3340, 3360
+                , 5950, 5980
                 , 6090, 6350, 6460, 6500, 6900, 6940
                 , 7080, 7170, 7210, 7250, 7360, 7430, 7460
                 , 7570, 7620, 7825, 7840, 7870, 7900, 7920
