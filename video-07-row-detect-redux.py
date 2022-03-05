@@ -34,7 +34,7 @@ ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
 FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
 
 # NOTE: MAX_ADD_RESIDUAL is used when adding a non-overlapping trace to a row candidate.
-# Overlapping traces are added unconditionally, and MAX_ROW_RESUDUAL used to decide
+# Overlapping traces are added unconditionally, and MAX_ROW_RESIDUAL used to decide
 # if the resulting row candidate is acceptable.  
 #
 # When the tape moves slowly, residuals tend to be larger, but holes in a row usually 
@@ -44,7 +44,7 @@ MAX_ADD_RESIDUAL    = 0.5           # Max squared residual for adding trace to r
 
 MAX_ROW_RESIDUAL    = 2.0           # Max residual for accepting trace residual as row
 
-NO_FIT_RESIDUAL     = 100           # Residual when no degrees of freedom for model fitting
+NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for model fitting
 
 
 # ===================================================== #
@@ -540,8 +540,8 @@ class region_trace_closed(region_trace):
             f", cent ({self.xcen:6.1f},{self.ycen:6.1f})"
             )
 
-    def short_str(self):
-        return (
+    def short_str(self, prefix=""):
+        return (prefix+
             f"trace: frames {self.frnum:d}::{self.frend:d}, area {self.area}"
             )
 
@@ -754,11 +754,9 @@ class region_trace_set(object):
                         newly created `region_trace_set`.
         """
         self.rtraces  = []                      # List of region traces in set
-        self.maxfrbeg = 0                       # Maximum trace start frame
+        self.minfrbeg = sys.maxsize             # Minimum trace start frame
         self.maxfrend = 0                       # Maximum trace end frame
         self.maxfrlen = 0                       # Maximum frame length of any trace
-        self.minfrend = sys.maxsize             # Minimum trace end frame
-        self.minfrlen = sys.maxsize             # Minimum frame length of any trace
         self.xmin     = sys.maxsize             # Region covering all traces ..
         self.ymin     = sys.maxsize
         self.xmax     = 0
@@ -792,17 +790,17 @@ class region_trace_set(object):
     def __str__(self):
         return (self.long_str(prefix="trace_subset: ", t_prefix="  "))
 
+    def short_str(self):
+        return (
+            f"minfrbeg {self.minfrbeg:d}, maxfrend {self.maxfrend:d}, "
+            f"maxfrlen {self.maxfrlen:d}, "
+            f"num traces  {len(self.rtraces):d}"
+            )
+
     def long_str(self, prefix="", t_prefix="  "):
         return (
             prefix + self.short_str() + "\n" +
             "\n".join([ t_prefix + t.long_str() for t in self.rtraces ] )
-            )
-
-    def short_str(self):
-        return (
-            f"maxfrbeg {self.maxfrbeg:d}"
-            f", minfrend {self.minfrend:d}, minfrlen {self.minfrlen:d}"
-            f", num traces  {len(self.rtraces):d}"
             )
 
     def log(self, frnum, logmethod=print, prefix="", t_prefix="    "):
@@ -817,13 +815,6 @@ class region_trace_set(object):
         """
         Draw background shading connecting traces in set (row)
         """
-        # Display as simple rectangle:
-        # xcen = (self.xmin + self.xmax) / 2
-        # x1, y1 = map_frame_pos(frnow, self.maxfrbeg, xcen, self.ymin)
-        # x2, y2 = map_frame_pos(frnow, self.minfrend, xcen, self.ymax)
-        # cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_fill, thickness=cv.FILLED)
-        # cv.rectangle(frame_show, (x1,y1), (x2, y2), colour_border, thickness=2)
-
         # Display as rectangle based on top/bottom corners
         topy     = 0
         topxmin  = 0
@@ -891,16 +882,13 @@ class region_trace_set(object):
         overlap_all   = all( ( overlap for _, overlap in overlaps_rtry ) )
         return (overlap_set, overlap_all)
 
-
     def add_trace(self, trace):
         """
         Adds a new region trace to the current trace set
         """
-        self.maxfrbeg = max(self.maxfrbeg, trace.frnum)
+        self.minfrbeg = min(self.minfrbeg, trace.frnum)
         self.maxfrend = max(self.maxfrend, trace.frend)
         self.maxfrlen = max(self.maxfrlen, trace.frlen)
-        self.minfrend = min(self.minfrend, trace.frend)
-        self.minfrlen = min(self.minfrlen, trace.frlen)
         self.xmin     = min(self.xmin, trace.xmin)
         self.ymin     = min(self.ymin, trace.ymin)
         self.xmax     = max(self.xmax, trace.xmax)
@@ -914,11 +902,9 @@ class region_trace_set(object):
         """
         if trace in self.rtraces:
             self.rtraces.remove(trace)
-            self.maxfrbeg = max( (t.frnum for t in self.rtraces) )
+            self.minfrbeg = min( (t.frnum for t in self.rtraces) )
             self.maxfrend = max( (t.frend for t in self.rtraces) )
             self.maxfrlen = max( (t.frlen for t in self.rtraces) )
-            self.minfrend = min( (t.frend for t in self.rtraces) )
-            self.minfrlen = min( (t.frlen for t in self.rtraces) )
             self.xmin     = min( (t.xmin  for t in self.rtraces) )
             self.ymin     = min( (t.ymin  for t in self.rtraces) )
             self.xmax     = max( (t.xmax  for t in self.rtraces) )
@@ -1001,7 +987,7 @@ class row_candidate(object):
         return (self.traces.short_str())
 
     def log(self, frnum, logmethod=print, prefix="row_candidate", t_prefix="    "):
-        logmethod(f"{prefix}: frnum: {frnum:d}, complete: {self.row_complete(frnum)}, residual: {self.residual:6.2f} ")
+        logmethod(f"{prefix}: frnum: {frnum:d}, complete: {self.row_complete(frnum)}, residual: {self.residual:6.3f} ")
         logmethod(self.long_str(prefix="  ", t_prefix=t_prefix))
         # logmethod(prefix, self.short_str())
         # for t in self.rtraces:
@@ -1064,7 +1050,7 @@ class row_candidate(object):
             self.residual = self._estimate_linear_fit_residual(self.traces)
             return (True, None)
         if len(overlaps_set) > 0:
-            return (False, row_candidate(region_trace_set(overlaps_set)))
+            return (False, row_candidate(region_trace_set(trace_set=overlaps_set, trace=trace)))
         return (False, None)
 
     def row_additional_trace(self, trace):
@@ -1095,9 +1081,9 @@ class row_candidate(object):
         residual = self._estimate_linear_fit_residual(traces)
         if residual <= MAX_ROW_RESIDUAL:
             # Add trace to row
-            log_info(f"row_additional_trace: residual {residual:6.2f}")
-            log_info(trace.long_str(prefix="+ trace: "))
-            log_info(self.long_str(prefix="  ", t_prefix="    "))
+            log_info(f"row_additional_trace: residual {residual:6.3f}")
+            log_info(trace.short_str(prefix="  adding trace: "))
+            log_info(self.long_str(prefix="  to ", t_prefix="    "))
             self.traces.add_trace(trace)
             self.residual = residual
             return True
@@ -1212,11 +1198,11 @@ class row_candidate(object):
         """
         # Don't use row data if less than 2 traces present.
         # @@TODO: try just using MAXGAP test.
-        mingap   = self.traces.maxfrlen if len(self.traces) > 2 else ROW_FRAME_MAXGAP
+        mingap   = self.traces.maxfrlen if len(self.traces) >= 2 else ROW_FRAME_MAXGAP
         rowgap   = self.row_gap(frnum)
         complete = ( (rowgap > ROW_FRAME_LOOKAHEAD) and 
-                 ( (rowgap > mingap) or (rowgap > ROW_FRAME_MAXGAP) )
-               )
+                     ( (rowgap > mingap) or (rowgap > ROW_FRAME_MAXGAP) )
+                   )
         return complete
 
     def row_orphaned(self, frnum):
@@ -1282,15 +1268,16 @@ def find_initial_row_candidates(frnum, closed_traces):
     row_candidates = []
     for t in closed_traces:
         new_candidates = []
-        no_candidates  = True
+        used_candidate = False
         for rc in row_candidates:
             match_candidate, new_candidate = rc.row_initial_trace(t)
             if match_candidate:
-                no_candidates = False
+                used_candidate = True
             if new_candidate:
                 new_candidates.append(new_candidate)
-                no_candidates = False
-        if no_candidates:
+                used_candidate = True
+        row_candidates.extend(new_candidates)
+        if not used_candidate:
             row_candidates.append(row_candidate(region_trace_set(trace=t)))
     return row_candidates
 
@@ -1311,25 +1298,42 @@ def find_extended_row_candidates(frnum, row_candidates, traces):
                 pass
     return row_candidates
 
+def trace_overlap(row_candidate, row_candidates):
+    """
+    Does any trace in `row_candidate` appear in any of `row_candidates`?
+    """
+    # NOTE: multiple iterations over `row_candidates` - don't use generator.
+    for t in row_candidate:
+        for c in row_candidates:
+            if t in c:
+                return True
+    return False
+
 def find_preferred_row_candidate(frnum, row_candidates):
     """
     Select a preferred row candidate from all those assembled.
     """
-    preferred     = None
-    preferred_res = MAX_ROW_RESIDUAL
+    log_info(f"## find_preferred_row_candidate ## frnum {frnum:d}")
+    unavailable_rows = []
     for c in row_candidates:
-        if (c.residual < preferred_res):
-            c.log(frnum, prefix=f"Preferred row (res < {preferred_res:6.2f})")
-            if c.row_complete(frnum):
-                preferred_res = c.residual
-                preferred = c
-            elif preferred:
-                # Better-than-preferred option is incomplete: does it use any common trace?
-                for t in c:
-                    if t in preferred:
-                        # Hold off using preferred candidate for now; continue scan for another
-                        preferred     = None
-                        preferred_res = MAX_ROW_RESIDUAL
+        c.log(frnum, prefix=f"Row candidate")
+        if not c.row_complete(frnum):
+            unavailable_rows.append(c)
+    preferred_res = MAX_ROW_RESIDUAL
+    preferred     = None
+    for c in row_candidates:
+        if c.row_complete(frnum):
+            if (c.residual < preferred_res):
+                c.log(frnum, prefix=f"Try candidate (res < {preferred_res:6.3f})")
+                if not trace_overlap(c, unavailable_rows):
+                    # Select this candidate if no overlap with any incomplete row
+                    c.log(frnum, prefix="Select")
+                    preferred_res = c.residual
+                    preferred     = c
+                elif preferred and trace_overlap(c, [preferred]):
+                    # Deselect current preferred option as there is a better one we cannot use yet
+                    preferred.log(frnum, prefix="Deselect")
+                    preferred     = None
     return preferred
 
 def remove_spurious_traces(frnum, row_candidates, traces):
@@ -1470,7 +1474,8 @@ def main():
                 break
 
             pause_frames = (
-                { 406, 750, 840, 1000
+                { # 790, 800, 820, 840, 1000
+                , 1130, 1150
                 , 2210
                 , 3100, 3210, 3370
                 , 5360, 5650, 5950, 5980
@@ -1482,6 +1487,8 @@ def main():
                 })
             if frame_number in pause_frames:
                 paused = True
+
+            log_info(f"\n***** Frame number {frame_number:d} *****")
 
             # Display frame (copy)
             frame_show_orig = show_video_frame("Original video", frame_number, frame)
@@ -1525,13 +1532,18 @@ def main():
             if len(new_traces) > 0:
                 # Update buffer of traces waiting to be sorted into rows
                 closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
-
                 while (True):
+                    log_info(f"## Assemble and test candidates ## frame_number {frame_number:d}, num traces {len(closed_traces):d}")
+                    for t in closed_traces:
+                        log_info(t.long_str(prefix="  "))
+
                     # Adding just one new row for each pass through this loop ensures that
                     # no trace is assigned to more than one row/
                     #
                     # Build an initial set of row candidates
                     row_candidates = find_initial_row_candidates(frame_number, closed_traces)
+                    for c in row_candidates:
+                        c.log(frame_number, prefix=f"Initial candidate")
                     # Add extra traces to row candidates
                     row_candidates = find_extended_row_candidates(frame_number, row_candidates, closed_traces)
                     # Select strongest candidate
@@ -1539,13 +1551,13 @@ def main():
                     if row_candidate == None:
                         break   # No more for now
                     # Use preferred candidate and remove traces from unallocated traces
-                    log_info(f"preferred row_candidate: residual {row_candidate.residual:6.2f}")
+                    log_info(f"Preferred: residual {row_candidate.residual:6.3f}")
                     log_info(row_candidate.long_str(prefix="  ", t_prefix="    "))
                     new_rows.append(row_candidate)
                     for t in row_candidate:
                         closed_traces.remove(t)
                         used_traces.append(t)
-                closed_traces = remove_spurious_traces(frame_number, row_candidates, closed_traces)
+                # closed_traces = remove_spurious_traces(frame_number, row_candidates, closed_traces)
 
             # Show closed region traces
             # log_region_traces(frame_number, new_traces)

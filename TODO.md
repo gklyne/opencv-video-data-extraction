@@ -10,7 +10,7 @@ TODO.md
     - maybe incorporate some kind of skew estimate into the residual for the 2-point case, 
       so that more nearly orthogonal sets are preferred?
 
-[ ] Eliminate traces that are clearly longer that a single tape row.
+[ ] Eliminate traces that are clearly longer than a single tape row.
 
 [ ] Display frame numbers top and bottom of video (so they remain visible when player shows menu bar over the frame).
 
