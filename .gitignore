@@ -4,9 +4,10 @@
 
 # App environment and data
 cvenv
-output.*
-output-*.*
+*.avi
 *.mov
+*.m4v
+output*
 
 # Packages
 *.egg

@@ -2,7 +2,13 @@ TODO.md
 
 ## 2022-03-02: video-07-row-detect-redux.py
 
+[ ] Have preferred selection consider multiple rows, so that spurious good linear fit doesn't force better combinations of row assignments to be rejected.  (e.g. look for best sum of residuals for a pair of non-overlapping row candidates, and choose earliest of those?) 
+
+[ ] Tune row-fitting parameters
+
 [ ] Eliminate single-trace row candidates
+
+[ ] Eliminate over-long and over-aged traces (should resolve above problem)
 
 [ ] Estimate and track sprocket hole Y-coordinates; use this to filter out spurious traces from row candidates.
 

@@ -23,6 +23,12 @@ import sys
 # == Constants ======================================== #
 # ===================================================== #
 
+FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
+
+TRACE_MAXLEN        = 50            # Maximum frame length of a trace
+
+TRACE_MAXAGE        = 50            # Maximum frame age of the end of a trace
+
 ROW_FRAME_LOOKAHEAD = 4             # Frame lookahead when determining end of row
 
 ROW_FRAME_MAXGAP    = 15            # Maximum gap between frames comprising a row
@@ -30,8 +36,6 @@ ROW_FRAME_MAXGAP    = 15            # Maximum gap between frames comprising a ro
 # ROW_FRAME_MAXHOLD   = 20            # Frames to hold a row candidate for a better option
 
 ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
-
-FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
 
 # NOTE: MAX_ADD_RESIDUAL is used when adding a non-overlapping trace to a row candidate.
 # Overlapping traces are added unconditionally, and MAX_ROW_RESIDUAL used to decide
@@ -46,6 +50,20 @@ MAX_ADD_RESIDUAL    = 0.6           # Max squared residual for adding trace to r
 MAX_ROW_RESIDUAL    = 2.0           # Max residual for accepting trace residual as row
 
 NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for model fitting
+
+# To assist with debugging...
+
+START_FRAME = 3000
+
+PAUSE_FRAMES = (
+    { 3058, 3077, 3160, 3210, 3340, 3360
+    , 5950, 5980
+    , 6090, 6350, 6460, 6500, 6900, 6940
+    , 7080, 7170, 7210, 7250, 7360, 7430, 7460
+    , 7570, 7620, 7825, 7840, 7870, 7900, 7920
+    , 12000
+    , 14200
+    })
 
 
 # ===================================================== #
@@ -672,8 +690,6 @@ def log_region_traces(frnum, traces):
 # -- region_trace_set --------------------- #
 # ----------------------------------------- #
 
-FLA = ROW_FRAME_LOOKAHEAD       # Frame lookahead when determining end of row
-
 class region_trace_set(object):
     """
     Represents a set of region traces that overlap in time (i.e. frame number).   
@@ -1051,7 +1067,8 @@ class row_candidate(object):
             self.residual = self._estimate_linear_fit_residual(self.traces)
             return (True, None)
         if len(overlaps_set) > 0:
-            return (False, row_candidate(region_trace_set(trace_set=overlaps_set, trace=trace)))
+            new_row_candidate = row_candidate(region_trace_set(trace_set=overlaps_set, trace=trace))
+            return (False, new_row_candidate)
         return (False, None)
 
     def row_additional_trace(self, trace):
@@ -1080,11 +1097,12 @@ class row_candidate(object):
             return False        # Trace already in this row candidate
         traces   = region_trace_set(trace_set=self.traces, trace=trace)
         residual = self._estimate_linear_fit_residual(traces)
-        log_info(f"row_additional_trace: residual {residual:6.3f}")
-        log_info(trace.long_str(prefix="    trace: "))
+
         if residual <= MAX_ADD_RESIDUAL:
             # Add trace to row
-            log_info(self.long_str(prefix="  adding to ", t_prefix="    "))
+            # log_info(f"row_additional_trace: residual {residual:6.3f}")
+            # log_info(trace.long_str(prefix="    trace: "))
+            # log_info(self.long_str(prefix="  adding to ", t_prefix="    "))
             self.traces.add_trace(trace)
             self.residual = residual
             return True
@@ -1268,16 +1286,20 @@ def find_initial_row_candidates(frnum, closed_traces):
     """
     row_candidates = []
     for t in closed_traces:
-        new_candidates = []
-        used_candidate = False
+        new_candidates  = []
+        used_candidate  = False
+        extend_existing = False
         for rc in row_candidates:
             match_candidate, new_candidate = rc.row_initial_trace(t)
             if match_candidate:
-                used_candidate = True
+                used_candidate  = True
+                extend_existing = True
             if new_candidate:
                 new_candidates.append(new_candidate)
                 used_candidate = True
-        row_candidates.extend(new_candidates)
+        # Add new candidate(s) if trace didn't fully overlap any existing candidate
+        if not extend_existing:
+            row_candidates.extend(new_candidates)
         if not used_candidate:
             row_candidates.append(row_candidate(region_trace_set(trace=t)))
     return row_candidates
@@ -1474,20 +1496,10 @@ def main():
             if frame is None:
                 break
 
-            start_frame = 0
-            if frame_number < start_frame:
+            if frame_number < START_FRAME:
                 continue
 
-            pause_frames = (
-                { 3077, 3160, 3210, 3340, 3360
-                , 5950, 5980
-                , 6090, 6350, 6460, 6500, 6900, 6940
-                , 7080, 7170, 7210, 7250, 7360, 7430, 7460
-                , 7570, 7620, 7825, 7840, 7870, 7900, 7920
-                , 12000
-                , 14200
-                })
-            if frame_number in pause_frames:
+            if frame_number in PAUSE_FRAMES:
                 paused = True
 
             log_info(f"\n***** Frame number {frame_number:d} *****")
@@ -1544,8 +1556,8 @@ def main():
                     #
                     # Build an initial set of row candidates
                     row_candidates = find_initial_row_candidates(frame_number, closed_traces)
-                    for c in row_candidates:
-                        c.log(frame_number, prefix=f"Initial candidate")
+                    # for c in row_candidates:
+                    #     c.log(frame_number, prefix=f"Initial candidate")
                     # Add extra traces to row candidates
                     row_candidates = find_extended_row_candidates(frame_number, row_candidates, closed_traces)
                     # Select strongest candidate
