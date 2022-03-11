@@ -53,11 +53,11 @@ NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for mo
 
 # To assist with debugging...
 
-START_FRAME = 3000
+START_FRAME = 0
 
 PAUSE_FRAMES = (
-    { 3058, 3077, 3160, 3210, 3340, 3360
-    , 5950, 5980
+    { 3210, 3216, 3340, 3350  # 3217, 3351 adjacent holes merged in traces
+    , 5650, 5950, 5954, 5980
     , 6090, 6350, 6460, 6500, 6900, 6940
     , 7080, 7170, 7210, 7250, 7360, 7430, 7460
     , 7570, 7620, 7825, 7840, 7870, 7900, 7920
@@ -870,7 +870,7 @@ class region_trace_set(object):
 
     def subsumes_set(self, ts):
         """
-        returns True if the current region_tracer_set subsumes the supplied `ts`
+        returns True if the current region_trace_set subsumes the supplied `ts`
         (i.e. contains all of the traces that are also in `ts`).
         """
         if ts == None:
@@ -1338,25 +1338,57 @@ def find_preferred_row_candidate(frnum, row_candidates):
     """
     log_info(f"## find_preferred_row_candidate ## frnum {frnum:d}")
     unavailable_rows = []
+    available_rows   = []
     for c in row_candidates:
-        c.log(frnum, prefix=f"Row candidate")
         if not c.row_complete(frnum):
             unavailable_rows.append(c)
-    preferred_res = MAX_ROW_RESIDUAL
+        elif c.residual < MAX_ROW_RESIDUAL:
+            c.log(frnum, prefix=f"Row candidate")
+            available_rows.append(c)
+    preferred_res = MAX_ROW_RESIDUAL*2
     preferred     = None
-    for c in row_candidates:
-        if c.row_complete(frnum):
-            if (c.residual < preferred_res):
-                c.log(frnum, prefix=f"Try candidate (res < {preferred_res:6.3f})")
-                if not trace_overlap(c, unavailable_rows):
-                    # Select this candidate if no overlap with any incomplete row
-                    c.log(frnum, prefix="Select")
-                    preferred_res = c.residual
-                    preferred     = c
-                elif preferred and trace_overlap(c, [preferred]):
-                    # Deselect current preferred option as there is a better one we cannot use yet
-                    preferred.log(frnum, prefix="Deselect")
-                    preferred     = None
+
+    # The following logic looks for a pair or row candidates, the sum of whose
+    # residuals is less than the sum of all other candidate pairs.
+    # The first of these to appear is selected.
+    #
+    # This logic is an attempt to take account of additional, better candidate 
+    # rows that might otherwise be blocked by selecting the best single candidate.
+    for c1 in available_rows:
+        for c2 in available_rows:
+            if not trace_overlap(c2, [c1]):
+                pair_residual = c1.residual + c2.residual
+                if pair_residual < preferred_res:
+                    # NOTE: values that appear to be equal can pass the above test due to floating
+                    #   point rounding errors.  While not ideal, it doesn't invalidate the logic.
+                    if not ( trace_overlap(c1, unavailable_rows) or 
+                             trace_overlap(c2, unavailable_rows)
+                           ):
+                        # Select this candidate pair if no overlap with any incomplete row
+                        c1.log(frnum, prefix="Select1")
+                        c2.log(frnum, prefix="Select2")
+                        preferred_res = pair_residual
+                        preferred     = c1 if c1.traces.minfrbeg <= c2.traces.minfrbeg else c2
+                    elif preferred and trace_overlap(preferred, [c1,c2]):
+                        # Deselect current preferred row as there may be a better one we cannot use yet
+                        preferred.log(frnum, prefix="Deselect")
+                        preferred     = None
+
+
+    # for c in row_candidates:
+    #     if c.row_complete(frnum):
+    #         if (c.residual < preferred_res):
+    #             c.log(frnum, prefix=f"Try candidate (res < {preferred_res:6.3f})")
+    #             if not trace_overlap(c, unavailable_rows):
+    #                 # Select this candidate if no overlap with any incomplete row
+    #                 c.log(frnum, prefix="Select")
+    #                 preferred_res = c.residual
+    #                 preferred     = c
+    #             elif preferred and trace_overlap(c, [preferred]):
+    #                 # Deselect current preferred option as there is a better one we cannot use yet
+    #                 preferred.log(frnum, prefix="Deselect")
+    #                 preferred     = None
+
     return preferred
 
 def remove_spurious_traces(frnum, row_candidates, traces):
