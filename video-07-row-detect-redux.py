@@ -25,15 +25,13 @@ import sys
 
 FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
 
-TRACE_MAXLEN        = 50            # Maximum frame length of a trace
+TRACE_MAXFRAMES     = 50            # Maximum frame length of a trace
 
-TRACE_MAXAGE        = 50            # Maximum frame age of the end of a trace
+TRACE_MAXAGE        = 60            # Maximum frame age of the end of a trace
 
 ROW_FRAME_LOOKAHEAD = 4             # Frame lookahead when determining end of row
 
 ROW_FRAME_MAXGAP    = 15            # Maximum gap between frames comprising a row
-
-# ROW_FRAME_MAXHOLD   = 20            # Frames to hold a row candidate for a better option
 
 ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
 
@@ -56,11 +54,40 @@ NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for mo
 START_FRAME = 0
 
 PAUSE_FRAMES = (
-    { 3210, 3216, 3340, 3350  # 3217, 3351 adjacent holes merged in traces
-    , 5650, 5950, 5954, 5980
-    , 6090, 6350, 6460, 6500, 6900, 6940
-    , 7080, 7170, 7210, 7250, 7360, 7430, 7460
-    , 7570, 7620, 7825, 7840, 7870, 7900, 7920
+    { 3216, 3340, 3350  # 3217, 3351 adjacent holes merged in traces
+    , 3570              # Double trace for single hole?
+    , 5350              # (5363) trace outside tape, added to row; correct sprocket missed
+    , 5650              # Sprocket holes merged
+    , 5950, 5954        # 5954(?) very long trace messes with detection
+    , 5980, 5990        # Trace outside tape width added to row
+    , 6070, 6080        # Trace outside tape width added to row
+    , 6090
+    , 6350              # Multiple spurious traces outside width of tape
+    , 6460              # Trace outside tape width added to row
+    , 6640              # Multiple errors?
+    , 6790, 6800, 6808  # Multiple merged holes?
+    , 6900              # Merged sprocket holes (multiple?)
+    , 6940              # (6948) Trace outside tape width added to row
+    , 7080              # (7082) Trace outside tape width added to row
+    , 7170              # Many spurious traces outside tape width; big width mismatch
+    , 7230, 7236        # Multiple spurious traces outside width of tape
+    , 7280              # (7288) Trace outside tape width added to row
+    , 7290              # (7298) Merged holes give broken row(s)
+    , 7350              # (7362) Trace outside tape width added to row
+    , 7410, 7420        # Crossed rows, cause not obvious
+    , 7440, 7452        # Crossed rows, merged sprocket holes, delayed detection, other poor data?
+    , 7461              # Bad row (merged holes?)
+    , 7535, 7540        # Trace outside tape width added to row
+    , 7620              # Multiple spurious traces outside width of tape; big error
+    , 7760              # Missing sprocket hole?  Truncated row.  7765 missed sprocket
+    , 7825              # Merged sprocket holes, big error.
+    , 7840              # Trace outside tape width added to row
+    , 7845, 7850        # Merged sprocket holes(?) (7847, 7850) Inaccurate and truncated rows
+    , 7870, 7880        # (7882) Large trace outside tape width added to row, distorted row(s)?
+    , 7890              # Merged sprocket holes
+    , 7898              # Crossed rows (trace outside tape)
+    , 7930, 7933        # Merged sprocket holes
+    , 8030, 8040        # Multiple merged holes? 
     , 12000
     , 14200
     })
@@ -183,8 +210,27 @@ def seek_video_frame(video_capture, frame_num):
 def show_video_frame(frame_label, frame_number, frame_data):
     # Display frame, and return displayed value
     frame_show   = frame_data.copy()
+    frame_height = frame_show.shape[0];
+    # Text in rectangle 2 px from top/bottom, with 5px margin below
+    #
+    #   ----          \
+    #      2           |
+    #   +-----------   |
+    #   | :   text     |
+    #   | 18     5     |
+    #   +-----------   |
+    #     :             > frame_height
+    #   +-----------   |
+    #   | :   text     |
+    #   | 18     5     |
+    #   +-----------   |
+    #      2           |
+    #   ----          /
     cv.rectangle(frame_show, (10, 2), (100,20), (255,255,255), -1)
     cv.putText(frame_show, str(frame_number), (15, 15),
+               cv.FONT_HERSHEY_SIMPLEX, 0.5 , (0,0,0))
+    cv.rectangle(frame_show, (10, frame_height-20), (100,frame_height-2), (255,255,255), -1)
+    cv.putText(frame_show, str(frame_number), (15, frame_height-7),
                cv.FONT_HERSHEY_SIMPLEX, 0.5 , (0,0,0))
     cv.imshow(frame_label, frame_show)
     return frame_show
@@ -536,19 +582,6 @@ class region_trace_closed(region_trace):
         # log_debug("@@@ region_trace_closed.__init__", str(self))
         return
 
-    def overlaps_trace(self, rtry):
-        """
-        Determine if supplied region trace overlaps temporally (shares any frames) 
-        with the current region trace
-
-        rtry            a `region_trace_closed` value that is to be tested.
-
-        returns:        True if the supplied region trace coordinates overlap the
-                        current region trace.
-        """
-        # NOTE: end frame is *after* last frame of trace, so using '<' not '<='
-        return (self.frnum < rtry.frend) and (rtry.frnum < self.frend)
-
     def __str__(self):
         return self.long_str()
 
@@ -563,6 +596,26 @@ class region_trace_closed(region_trace):
         return (prefix+
             f"trace: frames {self.frnum:d}::{self.frend:d}, area {self.area}"
             )
+
+    def active(self, frnum):
+        """
+        Returns True if the current trace is considered active for inclusion in any 
+        future rows when processing the indicated video frame number.
+        """
+        return ( (frnum - self.frend) <= TRACE_MAXAGE )
+
+    def overlaps_trace(self, rtry):
+        """
+        Determine if supplied region trace overlaps temporally (shares any frames) 
+        with the current region trace
+
+        rtry            a `region_trace_closed` value that is to be tested.
+
+        returns:        True if the supplied region trace coordinates overlap the
+                        current region trace.
+        """
+        # NOTE: end frame is *after* last frame of trace, so using '<' not '<='
+        return (self.frnum < rtry.frend) and (rtry.frnum < self.frend)
 
     def format_frame_coords(self, prefix):
         """
@@ -670,14 +723,6 @@ def log_region_traces(frnum, traces):
         for rc_str in rt.format_frame_coords("  "):
             log_info(rc_str)
     return
-
-
-
-
-
-
-
-
 
 # ===================================================== #
 # == Row detection classes and methods ================ #
@@ -1061,6 +1106,10 @@ class row_candidate(object):
         The initial criterion applied is to see if it overlaps all other traces in the 
         current row:  if it does then it is accepted.
         """
+        if trace.frlen > TRACE_MAXFRAMES:   
+            # Don't consider overlong trace
+            # This test might get a bit cleverer, but so far that's not needed.
+            return (False, None)
         overlaps_set, overlaps_all = self.traces.overlaps_traces(trace)
         if overlaps_all:
             self.traces.add_trace(trace)
@@ -1093,6 +1142,10 @@ class row_candidate(object):
         The test used is a low residual for a linear fit through all traces including the 
         supplied additional trace.
         """
+        if trace.frlen > TRACE_MAXFRAMES:
+            # Don't consider overlong trace
+            # This test might get a bit cleverer, but so far that's not needed.
+            return False
         if trace in self.traces:
             return False        # Trace already in this row candidate
         traces   = region_trace_set(trace_set=self.traces, trace=trace)
@@ -1391,23 +1444,22 @@ def find_preferred_row_candidate(frnum, row_candidates):
 
     return preferred
 
-def remove_spurious_traces(frnum, row_candidates, traces):
+def remove_spurious_traces(frnum, traces):
     """
     Returns list of traces that may still be considered "active".
 
-        active_traces = remove_spurious_traces(frnum, row_candidates, traces)
-
-    Operates by scanning for row candidates that may still be extended, and returns a 
-    list of traces that appear in any of those.
+        active_traces = remove_spurious_traces(frnum, traces)
     """
-    active_traces = set()
-    for c in row_candidates:
-        if not c.row_orphaned(frnum):
-            for t in c:
-                active_traces.add(t)
-        else:
-            c.log(frnum, prefix=f"Orphaned row")
-    return list(active_traces)
+    return [ t for t in traces if t.active(frnum) ]
+
+    # active_traces = set()
+    # for c in row_candidates:
+    #     if not c.row_orphaned(frnum):
+    #         for t in c:
+    #             active_traces.add(t)
+    #     else:
+    #         c.log(frnum, prefix=f"Orphaned row")
+    # return list(active_traces)
 
 def draw_rows(
         frame_show, frnum, rows, colour_border, 
@@ -1578,6 +1630,7 @@ def main():
             if len(new_traces) > 0:
                 # Update buffer of traces waiting to be sorted into rows
                 closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
+                closed_traces = remove_spurious_traces(frame_number, closed_traces)
                 while (True):
                     log_info(f"## Assemble and test candidates ## frame_number {frame_number:d}, num traces {len(closed_traces):d}")
                     for t in closed_traces:
@@ -1603,7 +1656,6 @@ def main():
                     for t in row_candidate:
                         closed_traces.remove(t)
                         used_traces.append(t)
-                # closed_traces = remove_spurious_traces(frame_number, row_candidates, closed_traces)
 
             # Show closed region traces
             # log_region_traces(frame_number, new_traces)
