@@ -30,7 +30,7 @@ Then:
 
 ## Video output
 
-App creates `outpuyt.avi`.  Approx 100Kb/frame.
+App creates `output.avi`.  Approx 100Kb/frame.
 
 Conversion to .m4v reduces size: use Final Cut pro; import media -> share -> export file.
 
