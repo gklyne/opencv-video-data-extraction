@@ -2,7 +2,7 @@ TODO.md
 
 ## Future
 
-[ ] Estimate and track sprocket hole Y-coordinates; use this to filter out spurious traces from row candidates.
+[ ] Eliminate over-long traces (cf., error about frame 5950)
 
 [ ] Eliminate repeated row candidates when assembling from active traces (optimization)
 
@@ -12,14 +12,19 @@ TODO.md
     - maybe incorporate some kind of skew estimate into the residual for the 2-point case, 
       so that more nearly orthogonal sets are preferred?
 
-[ ] Overlay detection data on original video; display and display single frame
+
+## 2202-05-03: video-08-row-data-extract.py
+
+[x] Estimate and track sprocket hole Y-coordinates; use this to filter out spurious traces from row candidates.
+
+[x] Overlay detection data on original video; display and display single frame
+
+[x] Extract hole data from each row, and write to data file
 
 
 ## 2022-03-02: video-07-row-detect-redux.py
 
 [x] Display frame numbers top and bottom of video (so they remain visible when player shows menu bar over the frame).
-
-[x] Eliminate over-long traces
 
 [x] Eliminate over-aged traces
 

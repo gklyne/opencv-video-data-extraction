@@ -46,11 +46,13 @@ NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for mo
 
 # To assist with debugging...
 
-START_FRAME = 0
+START_FRAME  = 0
+NOSTOP_FRAME = 6000      # Don't pause until here.  Set to zero for normal pause/breakpoints.
 
 PAUSE_FRAMES = (
     { 3216, 3340        # 3217, 3351 adjacent holes merged in traces; crossover
     , 3350              # 3367: hole out of range (y1=0, d1=-0.05, n60=-3)
+    , 3550              # 3563: hole out of range (y1=0, d1 -0.05, n60=-3)
     # , 3570              # Double trace for single hole?
     , 5350              # (5363) trace outside tape, added to row; correct sprocket missed
     , 5650              # Sprocket holes merged
@@ -1469,15 +1471,14 @@ class Row_Data_Accumulator(object):
         if (n60 < 0) or (n60 > 61):
             # Data out of range
             log_warning(f"Detected hole out of range: y1 {y1:8.2f}, d1 {d1:8.2f}, n60 {n60:d}")
-            log_warning(f"ymin_track {ymin_track:8.2f}, ymax_track  {ymax_track:8.2f}")
+            log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
             paused = True
-        elif (n60%1 == 1):
+        elif (n60%2 == 1):
             # Data between columns
             log_warning(f"Detected hole between columns: y1 {y1:8.2f}, d1 {d1:8.2f}, n60 {n60:d}")
-            log_warning(f"ymin_track {ymin_track:8.2f}, ymax_track  {ymax_track:8.2f}")
+            log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
             paused = True
         return n60 // 2     # Integer division
-        # return round(30*(y1*SPROCKET_HOLE_WIDTH - SPROCKET_DATA_OFFSET)/DATA_HOLE_WIDTH)
 
     def extract_row_data(self, frnum, row_detected):
         """
@@ -1490,91 +1491,6 @@ class Row_Data_Accumulator(object):
         row_data   = self.detect_data_holes(frnum, row_detected, ymin, ymax)
         self.row_data.append(row_data)
         return row_data
-
-    # def _unused_track_sprocket_holes(self, row_detected):
-    #     """
-    #     This method analyses data from a new row of tape data, and updates and 
-    #     returns estimates of the sprocket hole Y positions from row to row.
-
-    #     It assumes that in the majority of rows, sprocket holes correspond to
-    #     the minimum and maximum Y values seen, but allows that data noise may 
-    #     mean that some rows contain data outside that range.
-
-    #     The intent of the code is to provide a tracking value that converges 
-    #     towards the observed sprocket hole positions, but allowing for some 
-    #     row-to-row drift.  It assumes that in the majority of frames, the 
-    #     sprocket holes correspond to the minimum and maximum Y coordinates of 
-    #     the observed traces for any row.  At steady state, the tolerances for
-    #     deviation from the previous row should be very tight, but in the early 
-    #     stage they are looser to allow for recovery from noisy data early in 
-    #     the process (see calculation of `ydev` below).
-
-    #     @@NOTES:
-
-    #     Arguably, a better approach might be to keep a history of the most recent
-    #     N min- and max- Y values, and do a RANSAC-style linear fit and residual 
-    #     calculation to exclude noisy data points, similar to the row detection.
-
-    #     Alternatively, the logic here might be overkill and a simplified tracking 
-    #     of filtered min- and max-Y values in a detected row might be enough
-    #     (allowing that the row detection will have already eliminated many 
-    #     noisy data values).
-
-    #     row_detected    is a `row_candidate` value with all of the traces in a
-    #                     new row to be processed.
-
-    #     returns:        observed or estimated ymin and ymax values, which 
-    #                     correspond to sprocket hole positions for the row.
-    #     """
-    #     traces  = row_detected.traces.rtraces
-    #     ycoords = [ t.ycen for t in traces ]
-    #     if self.num_track == 0:
-    #         # Initial estimate is 1st row seen
-    #         self.ymin_track = min(ycoords)
-    #         self.ymax_track = max(ycoords)
-    #         self.num_track  = 1
-    #     # Look for traces closest above and below tracked min- and max- Y values
-    #     ymint = self.ymin_track
-    #     ymaxt = self.ymax_track
-    #     yrngt = (ymaxt - ymint)
-    #     yminl = ymint - yrngt
-    #     yminh = ymint + yrngt
-    #     ymaxl = ymaxt - yrngt
-    #     ymaxh = ymaxt + yrngt
-    #     for y in ycoords:
-    #         if y < ymint and y > yminl: yminl = y
-    #         if y > ymint and y < yminh: yminh = y
-    #         if y < ymaxt and y > ymaxl: ymaxl = y
-    #         if y > ymaxt and y < ymaxh: ymaxh = y
-    #     # yminl and yminh are data coords closest below and above ymint
-    #     # ymaxl and ymaxh are data coords closest below and above ymaxt
-    #     #
-    #     # Pick row data values that are closest to the tracking estimates
-    #     yminr = ( yminh if yminh-ymint < ymint-yminl else yminl)
-    #     ymaxr = ( ymaxh if ymaxh-ymaxt < ymaxt-ymaxl else ymaxl)
-    #     # Reject data values that are not within (1%?) of the Y-coord range of
-    #     # the currently tracked values in the limiting case of a long history.
-    #     # For shorter tracking lengths, relax the constraints and favour
-    #     # actual data that represents a wider range.
-    #     old_weight = self.num_track
-    #     new_weight = old_weight + 1
-    #     ydev       = yrngt / old_weight # @@@TODO: tune this
-    #     # @@TODO: the "*4" below is an attempt to allow the range to be 
-    #     #         expanded in the early stages of tracking.  In practice, 
-    #     #         this multiplier should converge to 1 as the number of
-    #     #         tracked points increases.
-    #     if ( (yminr < ymint-ydev*4) or (yminr > ymint+ydev) ):
-    #         yminr = ymint
-    #     if ( (ymaxr < ymaxt-ydev) or (ymaxr > ymaxt+ydev*4) ):
-    #         ymaxr = ymaxt
-    #     self.ymin_track = (self.ymin_track*old_weight + yminr)/new_weight
-    #     self.ymax_track = (self.ymax_track*old_weight + ymaxr)/new_weight
-    #     # New values contribute >= 2% when updating, where
-    #     # steady-state 2% of tape width is less than the column pitch
-    #     self.num_track  = max(new_weight, 49)
-    #     # Return raw data points if selected, otherwise previous tracking value
-    #     return yminr, ymaxr
-
 
     def track_sprocket_holes(self, row_detected):
         """
@@ -1678,20 +1594,6 @@ class Row_Data_Accumulator(object):
             n30 = self.map_y1_n(y1)
             if n30 >= 0 and n30 <= 30:
                 row_data.set_data(n30, True)
-            #@@@@@
-            # #p30 = y1*32.84 - 1.58
-            # p60 = y1*65.68 - 3.16
-            # n60 = round(p60)
-            # if (n60 < 0) or (n60 > 60):
-            #     # Data out of sprocket range
-            #     log_warning(f"Detected hole out of range: {y:8.2f} [{ymin:8.2f}..{ymax:8.2f}]")
-            # elif (n60%1 == 1):
-            #     # Data between columns
-            #     log_warning(f"Detected hole between columns: {y:8.2f} [{ymin:8.2f}..{ymax:8.2f}]")
-            # else:
-            #     n30 = n60 // 2     # Integer division
-            #     row_data.set_data(n30, True)
-            #@@@@@
         return row_data
 
 
@@ -1996,9 +1898,6 @@ def main():
             if frame_number < START_FRAME:
                 continue
 
-            if frame_number in PAUSE_FRAMES:
-                paused = True
-
             log_info(f"\n***** Frame number {frame_number:d} *****")
 
             # Display frame (copy)
@@ -2104,6 +2003,12 @@ def main():
             # Write the frame into the file 'output.avi'
             write_video_frame_pair(video_writer, frame_number, frame_show_orig, frame_row_data)
 
+            # Check for data breakpoint, etc.
+            if frame_number in PAUSE_FRAMES:
+                paused = True
+            if (frame_number < NOSTOP_FRAME):
+                paused = False
+
         # Check for keyboard interrupt, or move to next frame after 20ms
         paused   = paused or step
         keyboard = cv.waitKey(20)
@@ -2127,8 +2032,17 @@ def main():
 
     # Extract and write final row data to a file.
 
+    with open("output.txt", mode="wt", encoding="UTF-8") as dataout:
+        dataout.write(f"Decoded data: {len(row_data_accum.row_data):d} rows from {frame_number:d} frames.\n")
+        dataout.write("\n")
+        dataout.write("-------------------------------------------\n")
+        for i, r in enumerate(row_data_accum.row_data):
+            dataout.write(f"row {i:>4d}: {str(r)}\n")
+        dataout.write("-------------------------------------------\n")
+        dataout.write("\n")
+        dataout.write("End of data\n")
 
-
+    log_info(f"Written {len(row_data_accum.row_data):d} rows of data to file output.txt")
 
     # Shut down on exit
 
