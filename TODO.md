@@ -13,7 +13,24 @@ TODO.md
       so that more nearly orthogonal sets are preferred?
 
 
-## 2202-05-03: video-08-row-data-extract.py
+## 2022-06-19: video-09-row-data-decode.py  @@TODO
+
+[ ] Using matrix array configuration, extract character data from decoded data
+
+[ ] Set up definition for Bulmer matrix array
+
+[ ] Look into word separation
+
+[ ] Look word "outline" shapes (per Dawn's wrapping word shapes onto canister)
+
+[ ] Investigate creating data-driven objects using FreeCAD?
+
+[ ] Blog post and telling the MC story...
+
+[ ] Redesign reader device to be more uniform with less wobble
+
+
+## 2022-05-03: video-08-row-data-extract.py
 
 [x] Estimate and track sprocket hole Y-coordinates; use this to filter out spurious traces from row candidates.
 

@@ -14,11 +14,26 @@ import functools
 import itertools
 import sys
 
+default_input_file_name = "'Monotype-tape.avi'"
+
 # ===================================================== #
 # == Constants ======================================== #
 # ===================================================== #
 
+MARKER_THRESHOLD    = 220           # Threshold for marker (hole) pixel detection
+                                    # See: select_highlight_regions
+
+# Region detection (see adjacent_pixel_region below)
+REGION_X_ADJACENT   = 5             # Max X-distance between adjacent pixels in a region
+REGION_Y_ADJACENT   = 3             # Max Y-distance between adjacent pixels in a region
+REGION_MIN_AREA     = 12            # Minimum area of region to be considered as marker/hole
+REGION_MAX_AREA     = 150           # Maximum area of region to be considered as marker/hole
+                                    # (NOT CURREENTRLY USED)
+
 FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
+
+TRACE_MAX_FRAME_GAP = 0             # Max frames without region data within a trace
+                                    # (i.e. frames without data before closing a trace)
 
 TRACE_MAXFRAMES     = 50            # Maximum frame length of a trace
 
@@ -34,7 +49,7 @@ ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
 # Overlapping traces are added unconditionally, and MAX_ROW_RESIDUAL used to decide
 # if the resulting row candidate is acceptable.  
 #
-# When the tape moves slowly, residuals tend to be larger, but holes in a row usually 
+# When the tape moves slowly, residuals tend to be larger, but holes in a row should 
 # all appear in at least one frame.
 
 MAX_ADD_RESIDUAL    = 0.6           # Max squared residual for adding trace to row
@@ -44,52 +59,182 @@ MAX_ROW_RESIDUAL    = 2.0           # Max residual for accepting trace residual 
 
 NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for model fitting
 
+# Constants for controlling Y range and sprocket hole detection
+
+SPROCKET_SAMPLE_MIN = 5             # Min sample size to establish sprocket position tracking
+SPROCKET_STDEV_MAX  = 10            # Max sample variance to establish sprocket position tracking
+
+SPROCKET_TRACK_FILT = 8             # Max sprocket history weighting for filtering (tau~8.5)
+    # (Exponential filter param: https://en.wikipedia.org/wiki/Exponential_smoothing)
+    # For values in the range 5..15, the time constant (steps to converge ~63% of target)
+    # is (very) approximately SPROCKET_TRACK_FILT+0.5
+SPROCKET_TRDEV_MAX  = 5             # Max detected sprocket deviation from tracked position
+
+ROW_TRACE_YMIN      = 100           # Row detect: disregard traces with Y less than this
+ROW_TRACE_YMAX      = 1900          # Row detect: disregard traces with Y greater than this
+
 # To assist with debugging...
 
 START_FRAME  = 0
-NOSTOP_FRAME = 6000      # Don't pause until here.  Set to zero for normal pause/breakpoints.
+NOSTOP_FRAME = 0        # Don't pause until here.  Set to zero for normal pause/breakpoints.
 
-PAUSE_FRAMES = (
-    { 3216, 3340        # 3217, 3351 adjacent holes merged in traces; crossover
-    , 3350              # 3367: hole out of range (y1=0, d1=-0.05, n60=-3)
-    , 3550              # 3563: hole out of range (y1=0, d1 -0.05, n60=-3)
-    # , 3570              # Double trace for single hole?
-    , 5350              # (5363) trace outside tape, added to row; correct sprocket missed
-    , 5650              # Sprocket holes merged
-    , 5950, 5954        # 5954(?) very long trace messes with detection
-    , 5980, 5990        # Trace outside tape width added to row
-    , 6070, 6080        # Trace outside tape width added to row
-    , 6090
-    , 6350              # Multiple spurious traces outside width of tape
-    , 6460              # Trace outside tape width added to row
-    , 6640              # Multiple errors?
-    , 6790, 6800, 6808  # Multiple merged holes?
-    , 6900              # Merged sprocket holes (multiple?)
-    , 6940              # (6948) Trace outside tape width added to row
-    , 7080              # (7082) Trace outside tape width added to row
-    , 7170              # Many spurious traces outside tape width; big width mismatch
-    , 7230, 7236        # Multiple spurious traces outside width of tape
-    , 7280              # (7288) Trace outside tape width added to row
-    , 7290              # (7298) Merged holes give broken row(s)
-    , 7350              # (7362) Trace outside tape width added to row
-    , 7410, 7420        # Crossed rows, cause not obvious
-    , 7440, 7452        # Crossed rows, merged sprocket holes, delayed detection, other poor data?
-    , 7461              # Bad row (merged holes?)
-    , 7535, 7540        # Trace outside tape width added to row
-    , 7620              # Multiple spurious traces outside width of tape; big error
-    , 7760              # Missing sprocket hole?  Truncated row.  7765 missed sprocket
-    , 7825              # Merged sprocket holes, big error.
-    , 7840              # Trace outside tape width added to row
-    , 7845, 7850        # Merged sprocket holes(?) (7847, 7850) Inaccurate and truncated rows
-    , 7870, 7880        # (7882) Large trace outside tape width added to row, distorted row(s)?
-    , 7890              # Merged sprocket holes
-    , 7898              # Crossed rows (trace outside tape)
-    , 7930, 7933        # Merged sprocket holes
-    , 8030, 8040        # Multiple merged holes? 
-    , 12000
-    , 14200
-    })
+PAUSE_FRAMES = (2, 
+    225, 238,           # WARNING ymax sprocket deviation: ymaxr  1757.02, ymaxt  1751.29, ydev     5.00
+    2418-15, 2418       # WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+    )
 
+LOG_REGION_TRACE_START  = 2418-15
+LOG_REGION_TRACE_END    = 2418
+
+# No hole for 'O' and 15
+Tape_columns = (
+    [ '0005'        #  0
+    , 14            #  1
+    , 13            #  2
+    , 12            #  3
+    , 11            #  4
+    , 10            #  5
+    ,  9            #  6
+    ,  8            #  7
+    ,  7            #  8
+    ,  6            #  9
+    ,  5            # 10
+    ,  4            # 11
+    ,  3            # 12
+    ,  2            # 13
+    ,  1            # 14
+    , 'A'           # 15
+    , 'B'           # 16
+    , 'C'           # 17
+    , '0075'        # 18 / 12
+    , 'D'           # 19
+    , 'E'           # 20
+    , 'S'           # 21 / 9    # Not a character row/col
+    , 'F'           # 22
+    , 'G'           # 23
+    , 'H'           # 24
+    , 'I'           # 25
+    , 'J'           # 26
+    , 'K'           # 27
+    , 'L'           # 28
+    , 'M'           # 29
+    , 'N'           # 30
+    ])
+
+Various_841_matrix = (
+    { 'A': [ (12, 'N') ],
+      'B': [ (12, 'J') ],
+      'C': [ (10, 'N') ],
+      'D': [ (13, 'O') ],
+      'E': [ (12, 'M') ],
+      'F': [ (11, 'N') ],
+      'G': [ (12, 'K') ],
+      'H': [ (14, 'N') ],
+      'I': [ ( 4, 'L') ],
+      'J': [ ( 8, 'H') ],
+      'K': [ (14, 'L') ],
+      'L': [ (11, 'M') ],
+      'M': [ (14, 'M') ],
+      'N': [ (13, 'N') ],
+      'O': [ (12, 'L') ],
+      'P': [ (11, 'L') ],
+      'Q': [ (12, 'H') ],
+      'R': [ (13, 'M') ],
+      'S': [ ( 8, 'I') ],
+      'T': [ (11, 'O') ],
+      'U': [ (13, 'L') ],
+      'V': [ (12, 'I') ],
+      'W': [ (15, 'N') ],
+      'X': [ (14, 'K') ],
+      'Y': [ (13, 'K') ],
+      'Z': [ (10, 'M') ],
+      'a': [ ( 7, 'N') ],
+      'b': [ ( 8, 'L') ],
+      'c': [ ( 4, 'N') ],
+      'd': [ ( 9, 'O') ],
+      'e': [ ( 4, 'O') ],
+      'f': [ ( 2, 'N') ],
+      'g': [ ( 7, 'M') ],
+      'h': [ ( 9, 'N') ],
+      'i': [ ( 1, 'O') ],
+      'j': [ ( 2, 'M') ],
+      'k': [ ( 9, 'K') ],
+      'l': [ ( 1, 'N') ],
+      'm': [ (14, 'O') ],
+      'n': [ ( 8, 'O') ],
+      'o': [ ( 7, 'O') ],
+      'p': [ ( 9, 'M') ],
+      'q': [ ( 8, 'K') ],
+      'r': [ ( 3, 'M') ],
+      's': [ ( 3, 'O') ],
+      't': [ ( 3, 'N') ],
+      'u': [ ( 8, 'N') ],
+      'v': [ ( 9, 'L') ],
+      'w': [ (12, 'O'), (13, 'C') ],
+      'x': [ ( 8, 'J'), (10, 'B') ],
+      'y': [ ( 8, 'M') ],
+      'z': [ ( 4, 'M') ],
+      ':': [ ( 1, 'I') ],
+      ';': [ ( 1, 'K') ],
+      ',': [ ( 1, 'M') ],
+      '.': [ ( 1, 'L') ]
+   })
+
+Caslon_14_matrix = (
+    { 'A': [ (11, 'I') ],
+      'B': [ (10, 'I') ],
+      'C': [ (11, 'K') ],
+      'D': [ (13, 'L') ],
+      'E': [ (11, 'J') ],
+      'F': [ (10, 'J') ],
+      'G': [ (14, 'K') ],
+      'H': [ (14, 'I') ],
+      'I': [ ( 4, 'J') ],
+      'J': [ ( 4, 'K') ],
+      'K': [ (13, 'E') ],
+      'L': [ (11, 'M') ],
+      'M': [ (15, 'G') ],
+      'N': [ (13, 'K') ],
+      'O': [ (13, 'J') ],
+      'P': [ (10, 'K') ],
+      'Q': [ (13, 'O') ],
+      'R': [ (11, 'L') ],
+      'S': [ ( 8, 'J') ],
+      'T': [ (13, 'M') ],
+      'U': [ (14, 'L') ],
+      'V': [ (13, 'N') ],
+      'W': [ (15, 'J') ],
+      'X': [ (13, 'D') ],
+      'Y': [ (12, 'K') ],
+      'Z': [ (12, 'L') ],
+      'a': [ ( 4, 'I') ],
+      'b': [ ( 7, 'J') ],
+      'c': [ ( 4, 'G') ],
+      'd': [ ( 7, 'I') ],
+      'e': [ ( 4, 'H') ],
+      'f': [ ( 2, 'G') ],
+      'g': [ ( 5, 'G') ],
+      'h': [ ( 7, 'G') ],
+      'i': [ ( 1, 'I') ],
+      'j': [ ( 2, 'O') ],
+      'k': [ ( 5, 'J') ],
+      'l': [ ( 1, 'G') ],
+      'm': [ (13, 'H') ],
+      'n': [ ( 7, 'C') ],
+      'o': [ ( 5, 'H') ],
+      'p': [ ( 7, 'F') ],
+      'q': [ ( 7, 'E') ],
+      'r': [ ( 3, 'I') ],
+      's': [ ( 2, 'J') ],
+      't': [ ( 2, 'I') ],
+      'u': [ ( 8, 'H') ],
+      'v': [ ( 5, 'I') ],
+      'w': [ (12, 'J'), (12, 'M') ],
+      'x': [ ( 6, 'I'), (8, 'B') ],
+      'y': [ (6, 'G') ],
+      'z': [ (4, 'L') ],
+      '.': [ (7, 'B') ],
+   })
 
 # ===================================================== #
 # == Log/debug functions ============================== #
@@ -172,10 +317,6 @@ def close_video_input(video_capture):
     video_capture.release()
     return
 
-def close_video_output(video_writer):
-    video_writer.release()
-    return
-
 def open_video_output(filepath, frame_width, frame_height):
     # Open video for writing
     #
@@ -188,6 +329,10 @@ def open_video_output(filepath, frame_width, frame_height):
         (frame_width,frame_height)                  # Size
         )
     return writer
+
+def close_video_output(video_writer):
+    video_writer.release()
+    return
 
 def read_video_frame(video_capture):
     # Read frame from VideoCapture object
@@ -206,9 +351,15 @@ def seek_video_frame(video_capture, frame_num):
     return video_capture.set(cv.CAP_PROP_POS_FRAMES, frame_num)
 
 def show_video_frame(frame_label, frame_number, frame_data):
-    # Display frame, and return displayed value
+    """
+    Add frame number to a copy of the supplied frame data, display with supplied label,
+    and return updated frame data (which can be written to an output file).
+    """
+    global window_pos
     frame_show   = frame_data.copy()
-    frame_height = frame_show.shape[0];
+    frame_height = frame_show.shape[0]  # See https://docs.opencv.org/3.4/d3/df2/tutorial_py_basic_ops.html
+    frame_width  = frame_show.shape[1]
+    # log_info(f"show_video_frame: {frame_label:s}, n: {frame_number:d}, h: {frame_height:d}, w: {frame_width:d}")
     # Text in rectangle 2 px from top/bottom, with 5px margin below
     #
     #   ----          \
@@ -231,6 +382,12 @@ def show_video_frame(frame_label, frame_number, frame_data):
     cv.putText(frame_show, str(frame_number), (15, frame_height-7),
                cv.FONT_HERSHEY_SIMPLEX, 0.5 , (0,0,0))
     cv.imshow(frame_label, frame_show)
+    if frame_label not in window_pos:
+        # New window: set position
+        window_pos[frame_label] = window_pos['next']
+        # @@NOTE: Don't know how to get actual window size.  Divide by 2 is estimate
+        window_pos['next']     += frame_width//2  
+        cv.moveWindow(frame_label,window_pos[frame_label],0)
     return frame_show
 
 def show_video_frame_mask(frame_label, frame_number, frame_data):
@@ -251,7 +408,7 @@ def show_video_frame_mask_centroids(frame_label, frame_number, frame_data, centr
 
 def write_video_frame_pair(video_writer, frame_number, frame_1, frame_2):
     # Write a pair of frames side-by-side to a video output channel
-    if frame_number > 75:       # @@@ Hack to keep demo videos shorter
+    if frame_number > 0:       # @@@ Hack to keep demo videos shorter
         frame_pair = np.hstack((frame_1,frame_2))
         video_writer.write(frame_pair)
     else:
@@ -310,7 +467,7 @@ def select_highlight_regions(frame):
     Is this helpful?  Assuming not
     ??? frame_blur = cv.GaussianBlur(frame_grey, (7, 7), 0)
     """
-    threshold = 200
+    threshold = MARKER_THRESHOLD
     high_out  = 255 
     T, frame_thresholded = cv.threshold(
         frame, threshold, high_out, 
@@ -318,6 +475,47 @@ def select_highlight_regions(frame):
         cv.THRESH_BINARY
         )
     return frame_thresholded
+
+def adjacent_pixel_pixel(x1,y1,x2,y2):
+    """
+    Determines whether two pixels may be considered adjacent
+
+    x1,y1               X- and Y- coordinate of pixel 1
+    x2,y2               X- and Y- coordinate of pixel 2
+
+    Returns:            True if the pixels are considered to be adjacent.
+    """
+    return ( (x1 >= x2-REGION_X_ADJACENT) and (x1 <= x2+REGION_X_ADJACENT) and
+             (y1 >= y2-REGION_Y_ADJACENT) and (y1 <= y2+REGION_Y_ADJACENT) )
+
+def adjacent_pixel_region(x,y,rxmin,rxmax,rymin,rymax):
+    """
+    Determines whether a pixel could be adjacent to a bounded region.
+
+    x,y                 X- and Y- coordinate of pixel
+    rxmin, rxmax        X coordinate bounds of region
+    rymin, rymax        Y coordinate bounds of region
+
+    Returns:            True if the pixel is considered to be adjacent to the region
+
+    Note: if region upper/lower bounds are the same, becomes a test for pixel adjacency.
+    """
+    return ( (x >= rxmin-REGION_X_ADJACENT) and (x <= rxmax+REGION_X_ADJACENT) and
+             (y >= rymin-REGION_Y_ADJACENT) and (y <= rymax+REGION_Y_ADJACENT) )
+
+def adjacent_region_region(r1xmin,r1xmax,r1ymin,r1ymax, r2xmin,r2xmax,r2ymin,r2ymax):
+    """
+    Determines whether two bounded rectangular regions could be considered adjacent.
+
+    r1xmin, r1xmax      X coordinate bounds of region 1
+    r1ymin, r1ymax      Y coordinate bounds of region 1
+    r2xmin, r2xmax      X coordinate bounds of region 2
+    r2ymin, r2ymax      Y coordinate bounds of region 2
+
+    Returns:            True if the regions are considered to be adjacent.
+    """
+    return ( (r1xmax >= r2xmin-REGION_X_ADJACENT) and (r1xmin <= r2xmax+REGION_X_ADJACENT) and
+             (r1ymax >= r2ymin-REGION_Y_ADJACENT) and (r1ymax <= r2ymax+REGION_Y_ADJACENT) )
 
 def find_frame_regions(frame_number, frame):
     """
@@ -342,13 +540,10 @@ def find_frame_regions(frame_number, frame):
         for nr, r in enumerate(region_pixels_list):
             # Find regions that adjoin new pixel
             merge = False
-            if ( r and
-                 (ipx >= r.xmin-2) and (ipx <= r.xmax+2) and
-                 (ipy >= r.ymin-1) and (ipy <= r.ymax+1) ):
+            if r and adjacent_pixel_region(ipx,ipy,r.xmin,r.xmax,r.ymin,r.ymax):
                 # Look for adjacency to actual pixel:
                 for rpx,rpy in r.pixelcoords:
-                    if ( (ipx >= rpx-2) and (ipx <= rpx+2) and
-                         (ipy >= rpy-1) and (ipy <= rpy+1) ):
+                    if adjacent_pixel_pixel(ipx,ipy,rpx,rpy):
                         # New pixel adjacent to existing region: merge in
                         if ipx < r.xmin: r.xmin = ipx
                         if ipx > r.xmax: r.xmax = ipx
@@ -413,8 +608,8 @@ class region_frame_centroid(object):
         cv.circle(frame, (cx,cy), cr, colour_red, thickness=2)
         return
 
-    def __str__(self):
-        return (
+    def __str__(self, prefix=""):
+        return (prefix+
             f"region_frame_centroid ({self.xcen:6.1f}, {self.ycen:6.1f})"
             f", area {self.area:4d}"
             f", X ({self.rpixels.xmin:4d}..{self.rpixels.xmax:<4d})"
@@ -466,16 +661,54 @@ class region_frame_centroid(object):
         r1y = round(self.ycen)
         r2x = round(r2.xcen)
         r2y = round(r2.ycen)
+        return (
+            adjacent_pixel_region(
+                r1x,r1y,
+                r2.rpixels.xmin, r2.rpixels.xmax,
+                r2.rpixels.ymin, r2.rpixels.ymax
+                ) or
+            adjacent_pixel_region(
+                r2x,r2y,
+                self.rpixels.xmin, self.rpixels.xmax,
+                self.rpixels.ymin, self.rpixels.ymax
+                )
+            )
+
+    def overlaps_alt1(self, r2):
+        """
+        Test for supplied region overlaps with current region.
+
+        Overlap occurs when the centroid of one region lies within the range of the other.
+        """
+        r1x = round(self.xcen)
+        r1y = round(self.ycen)
+        r2x = round(r2.xcen)
+        r2y = round(r2.ycen)
         return ( ( (r2x >= self.rpixels.xmin) and (r2x <= self.rpixels.xmax) and
                    (r2y >= self.rpixels.ymin) and (r2y <= self.rpixels.ymax) ) or
                  ( (r1x >= r2.rpixels.xmin)   and (r1x <= r2.rpixels.xmax) and
                    (r1y >= r2.rpixels.ymin)   and (r1y <= r2.rpixels.ymax) ) 
                )
 
+    def overlaps_alt2(self, r2):
+        """
+        Test for supplied region overlap with current region.
+
+        Overlap occurs when the rectangular bounding ranges of the regions overlap,
+        as determined by `adjacent_region_region` (above).
+        """
+        return adjacent_region_region(
+            self.rpixels.xmin, self.rpixels.xmax,
+            self.rpixels.ymin, self.rpixels.ymax,
+            r2.rpixels.xmin, r2.rpixels.xmax,
+            r2.rpixels.ymin, r2.rpixels.ymax
+            )
 
 def find_frame_region_coords(region_pixels_list):
     """
     For each in a list of region pixels, calculate region centroid and area
+
+    Returns a list of `region_frame_centroid` values.
     """
     region_coords = map(region_frame_centroid, region_pixels_list)
     return region_coords
@@ -484,9 +717,11 @@ def filter_region_coordinates(region_centroids_list):
     """
     Filter a list of region centroids to eliminate those that are unsuitable for further
     consideration (e.g., too small to be a detected tape hole).
+
+    Returns a list of `region_frame_centroid` values.
     """
     def f(c):
-        return c and (c.area >= 12) # and (c['area'] <= 150)
+        return c and (c.area >= REGION_MIN_AREA) # and (c['area'] <= REGION_MAX_AREA=150)
     return list(filter(f, region_centroids_list))
 
 # ----------------------------------------- #
@@ -502,8 +737,7 @@ class region_trace(object):
 
     def __init__(self, frnum, rcoords):
         self.frnum   = frnum        # Start frame number
-        self.rcoords = rcoords      # list of `region_frame_centroid`s for each fame in range
-                                    # - index+frnum for video frame number
+        self.rcoords = rcoords      # list of `region_frame_centroid`s
         return
 
 class region_trace_open(region_trace):
@@ -513,8 +747,14 @@ class region_trace_open(region_trace):
 
     def __init__(self, frnum, rcoords):
         super(region_trace_open, self).__init__(frnum, rcoords)
+        self.frfin   = frnum        # Final frame number with coordinate data
         self.closing = False
         return
+
+    def __str__(self, prefix=""):
+        return (prefix+
+            f"trace_open: frames {self.frnum:d}::{self.frfin:d}, closing {self.closing:b}"
+            )
 
     def overlaps_region(self, rtry):
         """
@@ -536,7 +776,8 @@ class region_trace_open(region_trace):
         Start processing for next frame
         """
         # log_debug("@@@ start_next_frame ", frnum, len(self.rcoords))
-        self.closing = True     # Default closing unless extend_trace called
+        if frnum > self.frfin+TRACE_MAX_FRAME_GAP:
+            self.closing = True     # Closing unless extend_trace called
         return
 
     def extend_trace(self, frnum, rc):
@@ -545,6 +786,16 @@ class region_trace_open(region_trace):
         """
         # log_debug("@@@ extend_trace ", frnum, len(self.rcoords))
         self.rcoords.append(rc)
+        self.frfin   = frnum
+        self.closing = False
+        return
+
+    def discontinue(self):
+        """
+        Flag that this open trace is no longer ongoing
+        """
+        self.frnum   = 0
+        self.rcoords = []
         self.closing = False
         return
 
@@ -553,6 +804,12 @@ class region_trace_open(region_trace):
         After next frame has been processed, test if trace is closing
         """
         return self.closing
+
+    def trace_ongoing(self):
+        """
+        After next frame has been processed, test if trace is still open
+        """
+        return (not self.closing) and (self.frnum > 0) and (len(self.rcoords) > 0)
 
 
 class region_trace_closed(region_trace):
@@ -594,6 +851,27 @@ class region_trace_closed(region_trace):
         return (prefix+
             f"trace: frames {self.frnum:d}::{self.frend:d}, area {self.area}"
             )
+
+    def is_plausible(self):
+        """
+        Check that trace satisfies basic sanity checks
+        """
+        return ( (self.frlen <= TRACE_MAXFRAMES) and
+                 (self.ymin  >= ROW_TRACE_YMIN) and 
+                 (self.ymax  <= ROW_TRACE_YMAX)
+               )
+
+    def in_sprocket_range(self, sprocket_range):
+        """
+        Check that trace plausibly lies between supplied sprocket hole coordinates.
+
+        sprocket_range  specifies (estimated) minimum and maximum Y-coordinates of 
+                        sprocket holes.
+        """
+        return ( (self.frlen <= TRACE_MAXFRAMES) and
+                 (self.ymin  >= sprocket_range[0]-SPROCKET_STDEV_MAX) and 
+                 (self.ymax  <= sprocket_range[1]+SPROCKET_STDEV_MAX)
+               )
 
     def active(self, frnum):
         """
@@ -646,26 +924,57 @@ class region_trace_closed(region_trace):
 #
 # frnum         is the frame number for the supplied region coordinates
 # frame_coords  is a list of region coordinates detected in the current frame
+#               Each member is a `region_frame_centroid` value.
 # open_traces   is a buffer of detected region traces that are still active in
 #               the preceding frame.
 #
 # ending_traces, open_traces = region_trace_detect(frnum, frame_coords, open_traces)
 #
 def region_trace_detect(frnum, frame_coords, open_traces):
+    #@@@@Diagnostic
+    if LOG_REGION_TRACE_START <= frnum <= LOG_REGION_TRACE_END:
+        for rc in frame_coords:
+            log_info(f"region_trace_detect: region_centroid: {rc}")
+    #@@@@
     new_traces = []
     for rt in open_traces:
         rt.start_next_frame(frnum)
     for rc in frame_coords:
-        for rt in open_traces:
-            if rt.overlaps_region(rc):
-                rt.extend_trace(frnum, rc)
-                break # to next rc
-        else:
+        ots = [rt for rt in open_traces if rt.overlaps_region(rc)]
+        if len(ots) == 0:
+            # No overlap: new trace
             nt = region_trace_open(frnum, [rc])
             new_traces.append(nt)
+        elif len(ots) == 1:
+            # Single overlap: add coordinates to that trace
+            ots[0].extend_trace(frnum, rc)
+        else:
+            # region overlaps multiple traces: merge them
+            for rt in ots[1:]:
+                for tc in rt.rcoords:
+                    ots[0].extend_trace(frnum, tc)
+                rt.discontinue()
+            ots[0].extend_trace(frnum, rc)  # Add new coords last
+        ### for rt in open_traces:
+        ###     if rt.overlaps_region(rc):
+        ###         rt.extend_trace(frnum, rc)
+        ###         break # to next rc
+        ###         #@@@@ if region overlaps multiple traces, they should be merged
+        ### else:
+        ###     nt = region_trace_open(frnum, [rc])
+        ###     new_traces.append(nt)
+    #@@@@Diagnostic
+    if LOG_REGION_TRACE_START <= frnum <= LOG_REGION_TRACE_END:
+        for ot in open_traces:
+            log_info(f"region_trace_detect: open trace: {ot}")
+            if len(ot.rcoords) < 10: #(ignore long traces)
+                for rc in ot.rcoords:
+                    log_info(f"    rc: {rc}")
+    #@@@@
+
     # Separate out ongoing/closed traces for result
     closed_traces  = [ region_trace_closed(frnum, rt) for rt in open_traces if rt.trace_closing() ]
-    ongoing_traces = [ rt for rt in open_traces if not rt.trace_closing() ] + new_traces
+    ongoing_traces = [ rt for rt in open_traces if rt.trace_ongoing() ] + new_traces
     return (closed_traces, ongoing_traces)
 
 # Add newly ending traces to buffer of closed traces.
@@ -793,6 +1102,14 @@ class region_trace_set(object):
         the offset to the sprocket hole on the other side of the tape.  
 
         NOTE: sprocket holes are approx 5mm from data holes; data hole spacing is approx 3mm.
+
+    [E]: p.ycen >= ROW_TRACE_YMIN
+         p.ycen <= ROW_TRACE_YMAX
+      - for all traces P in a row.
+
+        This is a heuristic to avoid spurious detection of traces from EL wire outside 
+        the reader bridge. See trace.is_plausible().
+
 
     These constraints are designed to allow a RANSAC-like algorithm [1] to be used to separate real
     data from noise (traces not corresponding to tape holes), without making assumptions about the
@@ -1118,9 +1435,7 @@ class row_candidate(object):
         The initial criterion applied is to see if it overlaps all other traces in the 
         current row:  if it does then it is accepted.
         """
-        if trace.frlen > TRACE_MAXFRAMES:   
-            # Don't consider overlong trace
-            # This test might get a bit cleverer, but so far that's not needed.
+        if not trace.is_plausible():
             return (False, None)
         overlaps_set, overlaps_all = self.traces.overlaps_traces(trace)
         if overlaps_all:
@@ -1154,9 +1469,7 @@ class row_candidate(object):
         The test used is a low residual for a linear fit through all traces including the 
         supplied additional trace.
         """
-        if trace.frlen > TRACE_MAXFRAMES:
-            # Don't consider overlong trace
-            # This test might get a bit cleverer, but so far that's not needed.
+        if not trace.is_plausible():
             return False
         if trace in self.traces:
             return False        # Trace already in this row candidate
@@ -1301,11 +1614,11 @@ class row_candidate(object):
 
 
 # ----------------------------------------- #
-# -- Row_Data ----------------------------- #
+# -- row_data ----------------------------- #
 # ----------------------------------------- #
 
 
-class Row_Data(object):
+class row_data(object):
     """
     This class represents data from a single row of the Monotype system tape.
     """
@@ -1331,6 +1644,10 @@ class Row_Data(object):
         """
         Set True or False value for a single hole position.
         """
+        global paused
+        if value and self.data[index]:
+            log_warning(f"row_data: set_data({index},{value}) twice")
+            paused = True
         self.data[index] = value
         return
 
@@ -1365,6 +1682,9 @@ class Row_Data(object):
         frnow           (integer) current frame number
         colour_sprocket Colour value for displaying sprocket holes
         colour_holes    Colour value for displaying data holes
+        colour_fills    Colour value for hole position with no data hole
+        row_data_accum  Accumulated row data used for mapping hole number to offset
+                        position.
         """
         def p(x,y): 
             return (x, y)
@@ -1381,26 +1701,25 @@ class Row_Data(object):
         cv.circle(frame_show, (cx, cy), cr, colour_sprocket, thickness=-2)
         # Show data holes
         vo     = 12
-        # showholes = [ i for (i, v) in self if v ]
         for i, v in self:
-            # y1     = (5 + i*95/30)/104     # See `detect_data_holes` comments below
             y1 = row_data_accum.map_n_y1(i)
             cx, cy = map_frame_pos(frnow, self.frnum, self.xpos, self.ymin + y1*self.yrng)
-            vs     = np.array([ p(cx,cy+vo), p(cx+vo, cy), p(cx, cy-vo), p(cx-vo, cy) ], np.int32)
-            colour = colour_holes if v else colour_fills
-            cv.polylines(frame_show, [vs], True, color=colour, thickness=2)
+            if v:
+                vs     = np.array([ p(cx,cy+vo), p(cx+vo, cy), p(cx, cy-vo), p(cx-vo, cy) ], np.int32)
+                cv.polylines(frame_show, [vs], True, color=colour_holes, thickness=2)
+            else:
+                cv.circle(frame_show, (cx, cy), cr, colour_fills, thickness=-2)
         return
 
-
 # ----------------------------------------- #
-# -- Row_Data_Accumulator ----------------- #
+# -- row_data_accumulator ----------------- #
 # ----------------------------------------- #
 
-SPROCKET_HOLE_WIDTH  = 104
-DATA_HOLE_WIDTH      = 95
+SPROCKET_HOLE_WIDTH  = 104.0
+DATA_HOLE_WIDTH      =  95.0
 SPROCKET_DATA_OFFSET = (SPROCKET_HOLE_WIDTH-DATA_HOLE_WIDTH)/2
 
-class Row_Data_Accumulator(object):
+class row_data_accumulator(object):
     """
     This class accumulates extracted data from rows, and also maintains a running 
     context that is used to estimate the extent of each row.
@@ -1410,12 +1729,15 @@ class Row_Data_Accumulator(object):
         """
         Construct row accumulator data object.
         """
-        self.ymin_track = None      # track of row ymin values
-        self.ymax_track = None      # track of row ymax values
-        self.num_track  = 0         # Number of values contributing to each track value
-        self.row_data   = []        # [Row_Data]
+        self.tracking     = False   # Set True when sprocket position estimate is established
+        self.track_data   = []      # Data used for sprocket tracking estimates
+        self.num_track    = 0       # Number of values contributing to each track value
+        self.ymin_track   = None    # Track of row ymin values
+        self.ymax_track   = None    # Track of row ymax values
+        self.xpos_track   = None    # Track approximate position of read head in video
+        self.rows_pending = []      # Saved `row_candidate` values pending extraction of data
+        self.row_data     = []      # Extracted `row_data` values
         return
-
 
     def map_n_y1(self, n):
         """
@@ -1433,7 +1755,7 @@ class Row_Data_Accumulator(object):
         Thus, for hole number N (zero-based), the position in mm relative to the 
         lowest sprocket hole is given by:  
 
-            ymm = 5 + N*95/30
+            ymm = 4.5 + N*95/30
 
         With distance between sprocket holes is normalized to 1, i.e.:
 
@@ -1445,7 +1767,24 @@ class Row_Data_Accumulator(object):
 
         Normalization of Y values is handled by calling code.
         """
-        return (SPROCKET_DATA_OFFSET + n*DATA_HOLE_WIDTH/30)/SPROCKET_HOLE_WIDTH
+        DATA_HOLE_PITCH = DATA_HOLE_WIDTH/30.0
+        return (SPROCKET_DATA_OFFSET + n*DATA_HOLE_PITCH)/SPROCKET_HOLE_WIDTH
+
+    def map_y1_n30_n60(self, y1):
+        """
+        For supplied y position normalized to spocket holes at 0 and 1, 
+        returns the corresponding tape hole number.
+
+        Returns intermediate values (d1,n30,n60) for diagnostic use.
+        """
+        global paused, step
+        # d1 is mapping to data region being range 0..1
+        #
+        # Map to 60-point range to detect "ambiguous" markers
+        d1  = (y1*SPROCKET_HOLE_WIDTH - SPROCKET_DATA_OFFSET)/DATA_HOLE_WIDTH
+        n60 = round(d1*60)  # map to integers 0..60
+        n30 = round(d1*30)  # map to integers 0..30
+        return (d1,n30,n60)
 
     def map_y1_n(self, y1):
         """
@@ -1454,7 +1793,7 @@ class Row_Data_Accumulator(object):
 
         Given from above:
 
-            y1  = (4.5 + N*95/30)/104
+            y1  = (4.5 + N*95/30.0)/104
 
         then
 
@@ -1462,74 +1801,124 @@ class Row_Data_Accumulator(object):
               = (y1*3120 - 150)/95
               = y1*32.84 - 1.58
         """
-        global paused, step
-        # d1 is mapping to data region being range 0..1
-        #
-        # Map to 60-point range to detect "ambiguous" markers
-        d1  = (y1*SPROCKET_HOLE_WIDTH - SPROCKET_DATA_OFFSET)/DATA_HOLE_WIDTH
-        n60 = round(d1*60)  # map to integers 0..60
+        d1, n30, n60 = self.map_y1_n30_n60(y1)
         if (n60 < 0) or (n60 > 61):
             # Data out of range
-            log_warning(f"Detected hole out of range: y1 {y1:8.2f}, d1 {d1:8.2f}, n60 {n60:d}")
+            log_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
             log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
             paused = True
         elif (n60%2 == 1):
             # Data between columns
-            log_warning(f"Detected hole between columns: y1 {y1:8.2f}, d1 {d1:8.2f}, n60 {n60:d}")
+            log_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
             log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
             paused = True
-        return n60 // 2     # Integer division
+        return n30
 
-    def extract_row_data(self, frnum, row_detected):
+    def extract_row_data(self, frnum, new_rows_detected):
         """
-        Extract row data from a new detected row.
+        Extract row data from a new detected rows.
 
         frnum           current frame number of video being processed.
-        row_detected    Row_Candidate value of detected row.
+        rows_detected   List of Row_Candidate values of detected rows.
         """
-        ymin, ymax = self.track_sprocket_holes(row_detected)
-        row_data   = self.detect_data_holes(frnum, row_detected, ymin, ymax)
-        self.row_data.append(row_data)
-        return row_data
+        self.rows_pending.extend(new_rows_detected)
+        for r in new_rows_detected:
+            self.init_sprocket_holes(r)
+        if self.tracking:
+            for r in self.rows_pending:
+                ymin, ymax = self.track_sprocket_holes(r)
+                rd         = self.detect_data_holes(frnum, r, ymin, ymax)
+                rd.log(frnum, logmethod=print)
+                self.row_data.append(rd)
+            self.rows_pending = []
+        return
+
+    def init_sprocket_position(self, sample):
+        """
+        Method looks for a sufficiently large sample of consistent values to
+        represent a reliable track of a sprocket hole position.
+
+        Returns consistent value for initial track, or None
+        """
+        log_info(f"init_sprocket_position: sample {sample}")
+        while len(sample) >= SPROCKET_SAMPLE_MIN:
+            s_mean = statistics.fmean(sample)
+            s_dev  = statistics.stdev(sample, s_mean)
+            s_med  = statistics.median(sample)
+            log_info(f"init_sprocket_position: s_mean {s_mean:f}, s_dev {s_dev:f}, s_med {s_med:f}, n: {len(sample):d}")
+            if s_dev <= SPROCKET_STDEV_MAX:
+                return s_mean
+            # Variance too large - remove outliers
+            sample = [ s for s in sample if abs(s-s_med) <= SPROCKET_STDEV_MAX ]
+        return None
+
+    def init_sprocket_holes(self, row_detected):
+        """
+        This method analyses data from a new row of tape data, and attempts
+        to estimate initial sprocket hole Y positions.
+
+        It assumes that in the majority of rows, sprocket holes correspond to
+        the minimum and maximum Y values seen, but allows that data noise may 
+        mean that some rows contain data outside that range.
+
+        row_detected    is a `row_candidate` value with all of the traces in a
+                        new row to be processed.
+
+        returns:        initial estimates of sprocket hole Y-coordinate positions,
+                        or None if an initial position has not been established.
+        """
+        traces  = row_detected.traces.rtraces
+        ycoords = [ t.ycen for t in traces ]
+        if not self.tracking:
+            ymin = min(ycoords)
+            ymax = max(ycoords)
+            self.track_data.append( (ymin, ymax) )
+            if self.ymin_track is None:
+                self.ymin_track = self.init_sprocket_position([ t[0] for t in self.track_data ])
+            if self.ymax_track is None:
+                self.ymax_track = self.init_sprocket_position([ t[1] for t in self.track_data ])
+            if (self.ymin_track is None) or (self.ymax_track is None):
+                return None
+            self.xpos_track = statistics.fmean([ t.xcen for t in traces ])
+            self.tracking   = True
+            self.num_track  = SPROCKET_SAMPLE_MIN
+        return (self.ymin_track, self.ymax_track)
 
     def track_sprocket_holes(self, row_detected):
         """
         This method analyses data from a new row of tape data, and updates and 
         returns estimates of the sprocket hole Y positions from row to row.
 
-        It assumes that in the majority of rows, sprocket holes correspond to
-        the minimum and maximum Y values seen, but allows that data noise may 
-        mean that some rows contain data outside that range.
+        It assumes that sprocket holes have very little row-to-row variation, 
+        but may drift significantly over several rows.
 
         The intent of the code is to provide a tracking value that converges 
         towards the observed sprocket hole positions, but allowing for some 
-        row-to-row drift.  It assumes that in the majority of frames, the 
-        sprocket holes correspond to the minimum and maximum Y coordinates of 
-        the observed traces for any row.
+        row-to-row drift.
 
         row_detected    is a `row_candidate` value with all of the traces in a
                         new row to be processed.
 
         returns:        observed or estimated ymin and ymax values, which 
-                        correspond to sprocket hole positions for the row.
+                        correspond to sprocket hole positions for the row,
+                        or None if no sprocket hole tracking has been 
+                        established.
         """
         global paused, step
+        assert self.tracking, "Sprocket hole tracking not established"
+
         traces  = row_detected.traces.rtraces
         ycoords = [ t.ycen for t in traces ]
-        if self.num_track == 0:
-            # Initial estimate is min, max values from 1st row seen
-            self.ymin_track = min(ycoords)
-            self.ymax_track = max(ycoords)
-            self.num_track  = 1
+
         old_weight = self.num_track
         new_weight = old_weight + 1
         ymint      = self.ymin_track
         ymaxt      = self.ymax_track
-        self.num_track  = min(new_weight, 30)
+        self.num_track  = min(new_weight, SPROCKET_TRACK_FILT)   # Limits weight of tracked positions
 
         # Look for traces closest above and below tracked min- and max- Y values
-        yrngt = (ymaxt - ymint)
-        yminl = ymint - yrngt
+        yrngt = (ymaxt - ymint)     # Tracked distance between sprocket holes
+        yminl = ymint - yrngt       # Initial values for scanning loop ...
         yminh = ymint + yrngt
         ymaxl = ymaxt - yrngt
         ymaxh = ymaxt + yrngt
@@ -1549,7 +1938,7 @@ class Row_Data_Accumulator(object):
         # Check for large value swings.  In each case of ymin and ymax:
         # (a) if the deviation is too large, use last track value
         # (b) otherwise: updated tracked value
-        ydev  = yrngt / old_weight      # Max deviation from tracked value
+        ydev  = SPROCKET_TRDEV_MAX
         if abs(yminr-ymint) > ydev:
             log_warning(f"ymin sprocket deviation: yminr {yminr:8.2f}, ymint {ymint:8.2f}, ydev {ydev:8.2f}")
             paused = True
@@ -1579,22 +1968,58 @@ class Row_Data_Accumulator(object):
         ymax            observed or estimated maximum-Y value, used as the 
                         position of the other sprocket hole for the row.
 
-        returns:        A `Row_Data` object indicating the detected holes in 
+        returns:        A `row_data` object indicating the detected holes in 
                         the supplied row.  The detected holes are represented as
                         an array of Boolean values.
         """
+        global paused, step
         yrng     = ymax - ymin 
         traces   = row_detected.traces.rtraces
         frnum    = round(statistics.fmean( ( (t.frnum + t.frend)/2 for t in traces ) ))
         xpos     = statistics.fmean( ( t.xcen for t in traces ) )
         ycoords  = [ t.ycen for t in traces if (t.ycen > ymin) and (t.ycen < ymax) ]
-        row_data = Row_Data(frnum, xpos, ymin, ymax)
+        rd       = row_data(frnum, xpos, ymin, ymax)
         for y in ycoords:
-            y1  = (y - ymin)/yrng
-            n30 = self.map_y1_n(y1)
+            y1 = (y - ymin)/yrng
+            d1, n30, n60 = self.map_y1_n30_n60(y1)
+            if (n60 < 0) or (n60 > 61):
+                # Data out of range
+                #@@@@ can be caused by double-detection of sprocket trace@@@@ ??
+                log_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+                log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
+                log_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
+                paused = True
+            elif (n60%2 == 1):
+                # Data between columns
+                log_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+                log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
+                log_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
+                paused = True
             if n30 >= 0 and n30 <= 30:
-                row_data.set_data(n30, True)
-        return row_data
+                rd.set_data(n30, True)
+            # n30 = self.map_y1_n(y1)
+            # if n30 >= 0 and n30 <= 30:
+            #     rd.set_data(n30, True)
+        return rd
+
+    def draw_row_labels(self, frame_show, frnow, colour):
+        """
+        Display row number labels
+
+        frame_show      OpenCV video output buffer for displayed value
+        frnow           (integer) current frame number
+        colour_labels   Colour value for label text
+        """
+        if self.tracking:
+            for i in range(31):
+                y1 = self.map_n_y1(i)
+                xpos = self.xpos_track
+                ypos = self.ymin_track + y1*(self.ymax_track-self.ymin_track)
+                cx, cy = map_frame_pos(frnow, frnow, xpos, ypos)
+                # log_info(f"draw_row_labels: {i}, {(cx, cy)}, {colour}")
+                cv.putText(frame_show, str(i), (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.5 , colour)
+        return
+
 
 
 # ----------------------------------------- #
@@ -1695,14 +2120,14 @@ def find_preferred_row_candidate(frnum, row_candidates):
     """
     Select a preferred row candidate from all those assembled.
     """
-    log_info(f"## find_preferred_row_candidate ## frnum {frnum:d}")
+    #log_info(f"## find_preferred_row_candidate ## frnum {frnum:d}")
     unavailable_rows = []
     available_rows   = []
     for c in row_candidates:
         if not c.row_complete(frnum):
             unavailable_rows.append(c)
         elif c.residual < MAX_ROW_RESIDUAL:
-            c.log(frnum, prefix=f"Row candidate")
+            # c.log(frnum, prefix=f"Row candidate")
             available_rows.append(c)
     preferred_res = MAX_ROW_RESIDUAL*2
     preferred     = None
@@ -1724,15 +2149,14 @@ def find_preferred_row_candidate(frnum, row_candidates):
                              trace_overlap(c2, unavailable_rows)
                            ):
                         # Select this candidate pair if no overlap with any incomplete row
-                        c1.log(frnum, prefix="Select1")
-                        c2.log(frnum, prefix="Select2")
+                        # c1.log(frnum, prefix="Select1")
+                        # c2.log(frnum, prefix="Select2")
                         preferred_res = pair_residual
                         preferred     = c1 if c1.traces.minfrbeg <= c2.traces.minfrbeg else c2
                     elif preferred and trace_overlap(preferred, [c1,c2]):
                         # Deselect current preferred row as there may be a better one we cannot use yet
                         preferred.log(frnum, prefix="Deselect")
                         preferred     = None
-
 
     # for c in row_candidates:
     #     if c.row_complete(frnum):
@@ -1750,22 +2174,13 @@ def find_preferred_row_candidate(frnum, row_candidates):
 
     return preferred
 
-def remove_spurious_traces(frnum, traces):
+def remove_spurious_traces(frnum, traces, sprocket_range):
     """
     Returns list of traces that may still be considered "active".
 
         active_traces = remove_spurious_traces(frnum, traces)
     """
-    return [ t for t in traces if t.active(frnum) ]
-
-    # active_traces = set()
-    # for c in row_candidates:
-    #     if not c.row_orphaned(frnum):
-    #         for t in c:
-    #             active_traces.add(t)
-    #     else:
-    #         c.log(frnum, prefix=f"Orphaned row")
-    # return list(active_traces)
+    return [ t for t in traces if t.in_sprocket_range(sprocket_range) and t.active(frnum) ]
 
 def draw_rows(
         frame_show, frnum, rows, colour_border, 
@@ -1818,7 +2233,7 @@ def draw_old_rows(frame_show, frnum, rows):
 # new_rows      is a list of traces to be highlighted as newly detected rows
 # old_rows      is a list of traces to be highlighted as previously detected rows
 #
-# Returns displayed video frame
+# Returns rendered video frame
 #
 def draw_video_frame_mask_region_traces_rows(
         frame_number, frame_data, rcoords, unused_traces, row_traces, new_rows, old_rows
@@ -1835,11 +2250,13 @@ def draw_video_frame_mask_region_traces_rows(
     return frame_show
 
 def draw_row_data(frame_show, frame_number, row_data_accum):
-    colour_sprocket = (0, 128, 255)       # Orange - colour for sprocket holes
-    colour_holes    = (0, 128, 255)       # Orange - colour for data
-    colour_fills    = (0, 128, 128)       # Dull orange? - colour for data
+    colour_sprocket   = (0, 128, 255)       # Orange - colour for sprocket holes
+    colour_holes      = (0, 128, 255)       # Orange - colour for data
+    colour_fills      = (0, 128,  96)       # Dull green - colour for hole position with no data
+    colour_row_labels = (200, 200, 200)     # Light grey - colour for row labels
     for rd in row_data_accum.row_data:
         rd.draw(frame_show, frame_number, colour_sprocket, colour_holes, colour_fills, row_data_accum)
+    row_data_accum.draw_row_labels(frame_show, frame_number, colour_row_labels)
     return frame_show
 
 
@@ -1848,11 +2265,11 @@ def draw_row_data(frame_show, frame_number, row_data_accum):
 # ----------------------------------------- #
 
 def main():
-    global paused, step
+    global paused, step, window_pos
 
     parser = argparse.ArgumentParser(description='This program uses OpenCV to read and process a video of \
                                                   a Monotype system paper tape.')
-    parser.add_argument('--input', type=str, help='Path to a video of a Monotype system tape.', default='Monotype-tape.avi')
+    parser.add_argument('--input', type=str, help='Path to a video of a Monotype system tape.', default=default_input_file_name)
     parser.add_argument('--algo', type=str, help='Background subtraction method (KNN, MOG2).', default='MOG2')
     args = parser.parse_args()
 
@@ -1876,16 +2293,18 @@ def main():
 
     #  Main frame-processing loop
 
-    paused = False
-    step   = False
+    paused         = False
+    step           = False
+    window_pos     = {'next': 0}
 
     open_traces    = []     # Buffer of traces still being assembled
     closed_traces  = []     # Buffer of traces assembled but not sorted
     used_traces    = []     # Buffer of traces that have been assigned to rows
     old_rows       = []     # Rows detected in previous frames (cumulative)
     draw_new_rows  = []     # Recently detected rows to be highlighted
+    sprocket_range = [ROW_TRACE_YMIN, ROW_TRACE_YMAX]
 
-    row_data_accum = Row_Data_Accumulator()     # Data extracted from detected rows
+    row_data_accum = row_data_accumulator()     # Data extracted from detected rows
 
     while True:
 
@@ -1913,7 +2332,9 @@ def main():
             frame_highlights = select_highlight_regions(frame_grey)
 
             # Display highlight regions
+            # ------
             # frame_show_highlights = show_video_frame_mask("Highlights", frame_number, frame_highlights)
+            # ------
 
             # Extract coordinates of highlight regions
             region_pixels_list = list(find_frame_regions(frame_number, frame_highlights))
@@ -1924,10 +2345,12 @@ def main():
             filtered_region_coords_list = filter_region_coordinates(region_coords_list)
 
             # Display coords
+            # ------
             # frame_show_coords = show_video_frame_mask_centroids(
             #     "Centroids", frame_number, frame_highlights, 
             #     filtered_region_coords_list
             #     )
+            # ------
 
             log_debug("Frame (filtered)", frame_number)
             for c in filtered_region_coords_list:
@@ -1935,6 +2358,8 @@ def main():
             # paused = True
 
             # Coalesce regions from successive frames into region traces
+            #
+            # `filtered_region_coords_list` is a list of `region_frame_centroid` values
             new_traces, open_traces = region_trace_detect(frame_number, filtered_region_coords_list, open_traces)
 
             # When new traces are detected...
@@ -1942,11 +2367,11 @@ def main():
             if len(new_traces) > 0:
                 # Update buffer of traces waiting to be sorted into rows
                 closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
-                closed_traces = remove_spurious_traces(frame_number, closed_traces)
+                closed_traces = remove_spurious_traces(frame_number, closed_traces, sprocket_range)
                 while (True):
                     log_info(f"## Assemble and test candidates ## frame_number {frame_number:d}, num traces {len(closed_traces):d}")
-                    for t in closed_traces:
-                        log_info(t.long_str(prefix="  "))
+                    # for t in closed_traces:
+                    #     log_info(t.long_str(prefix="  "))
 
                     # Adding just one new row for each pass through this loop ensures that
                     # no trace is assigned to more than one row/
@@ -1971,30 +2396,38 @@ def main():
 
             # Show closed region traces
             # log_region_traces(frame_number, new_traces)
+            # ------
             # frame_show_traces = show_video_frame_mask_region_traces(
             #     "Traces", frame_number, frame_highlights, 
             #     filtered_region_coords_list, closed_traces
             #     )
+            # ------
 
             # Show row traces
             if len(new_rows) > 0:
+                log_info(f"new_rows {len(new_rows)}")
                 for r in new_rows:
                     r.log(frame_number, logmethod=print)
                 draw_new_rows = new_rows
+            # frame_show_rows = show_video_frame_mask_region_traces(
+            #     "Rows", frame_number, frame_highlights, 
+            #     filtered_region_coords_list, closed_traces
+            #     )
+            # ------
             frame_rows = draw_video_frame_mask_region_traces_rows(
                 frame_number, frame_highlights, 
                 filtered_region_coords_list, closed_traces, used_traces,
                 draw_new_rows, old_rows
                 )
+            # frame_rows = show_video_frame("rows", frame_number, frame_rows)
+            # ------
 
             # Move new rows to old
             old_rows.extend(new_rows)
 
             # Extract data from rows
             # NOTE: new_rows is a list of `row_candidate` values
-            for r in new_rows:
-                rd = row_data_accum.extract_row_data(frame_number, r)
-                rd.log(frame_number, logmethod=print)
+            row_data_accum.extract_row_data(frame_number, new_rows)
             draw_row_data(frame_rows, frame_number, row_data_accum)
 
             # Display video frame of visualized data
