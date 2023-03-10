@@ -1,0 +1,84 @@
+------- Frame number   4633 -------
+WARNING Detected hole out of range: y1   0.0039, d1  -0.0431, n60 -3, n30 -1
+WARNING ymin_track   149.40, ymax_track   1714.98
+WARNING y:   156.45, y1:   0.0039, range: (  150.36.. 1717.79: 1567.44)
+  -- fr 4623: sprocket hole region not fully merged
+  -- fr 4624: traces not merged
+  -- data good  
+
+
+------- Frame number   8828 -------
+WARNING ymax sprocket deviation: ymaxr   968.36, ymaxt  1707.83, ymaxdev   739.46, ytrdev_max     8.00
+  -- fr 8828: Sprocket holes merged
+  -- 8813-8818: no frame gap between traces (bump up threshold? fr: 8816)
+  -- data still looks good!
+------- Frame number  10112 -------
+WARNING ymin sprocket deviation: yminr   457.76, ymint   148.77, ymindev   308.98, ytrdev_max     8.00
+  -- fr 10093-10099: sprocket holes merged
+  -- fr 10096: should be gap?
+  -- data still looks good!
+------- Frame number  16383 -------
+WARNING ymax sprocket deviation: ymaxr  1163.71, ymaxt  1709.30, ymaxdev   545.59, ytrdev_max     8.00
+  -- sprocket holes merged; data still looks good!
+------- Frame number  16606 -------
+WARNING Detected hole out of range: y1   0.0041, d1  -0.0429, n60 -3, n30 -1
+WARNING ymin_track   150.23, ymax_track   1716.50
+WARNING y:   154.33, y1:   0.0041, range: (  147.95.. 1715.85: 1567.91)
+  -- sprocket hole region not fully merged
+  -- traces not merged
+  -- data good  
+------- Frame number  17652 -------
+WARNING Detected hole out of range: y1   0.0043, d1  -0.0426, n60 -3, n30 -1
+WARNING ymin_track   149.83, ymax_track   1715.54
+WARNING y:   153.91, y1:   0.0043, range: (  147.15.. 1714.32: 1567.17)
+  -- sprocket hole region not fully merged
+  -- traces not merged
+  -- data good  
+
+
+Block with too much tape drift: data still good
+------- Frame number  19838 -------
+WARNING ymin sprocket deviation: yminr   152.06, ymint   143.70, ymindev     8.37, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0053, d1  -0.0415, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1710.70
+WARNING y:   152.06, y1:   0.0053, range: (  143.70.. 1716.49: 1572.80)
+------- Frame number  19841 -------
+WARNING ymin sprocket deviation: yminr   152.66, ymint   143.70, ymindev     8.96, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0057, d1  -0.0411, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1711.40
+WARNING y:   152.66, y1:   0.0057, range: (  143.70.. 1716.97: 1573.27)
+------- Frame number  19845 -------
+WARNING ymin sprocket deviation: yminr   153.36, ymint   143.70, ymindev     9.66, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0061, d1  -0.0406, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1712.09
+WARNING y:   153.36, y1:   0.0061, range: (  143.70.. 1717.63: 1573.93)
+------- Frame number  19849 -------
+WARNING ymin sprocket deviation: yminr   153.51, ymint   143.70, ymindev     9.82, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0062, d1  -0.0405, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1712.75
+WARNING y:   153.51, y1:   0.0062, range: (  143.70.. 1718.03: 1574.33)
+------- Frame number  19854 -------
+WARNING ymin sprocket deviation: yminr   153.44, ymint   143.70, ymindev     9.74, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0062, d1  -0.0406, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1713.49
+WARNING y:   153.44, y1:   0.0062, range: (  143.70.. 1719.39: 1575.69)
+------- Frame number  19858 -------
+WARNING ymin sprocket deviation: yminr   152.91, ymint   143.70, ymindev     9.21, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0058, d1  -0.0410, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1714.22
+WARNING y:   152.91, y1:   0.0058, range: (  143.70.. 1720.14: 1576.44)
+------- Frame number  19859 -------
+WARNING ymin sprocket deviation: yminr   152.35, ymint   143.70, ymindev     8.66, ytrdev_max     8.00
+WARNING Detected hole out of range: y1   0.0055, d1  -0.0414, n60 -2, n30 -1
+WARNING ymin_track   143.70, ymax_track   1714.81
+WARNING y:   152.35, y1:   0.0055, range: (  143.70.. 1719.47: 1575.78)
+Block ends
+
+
+
+From about 20000: several data holes merged: need to run tape more slowly?
+
+------- Frame number  20120 -------
+WARNING Detected hole out of range: y1   0.0043, d1  -0.0427, n60 -3, n30 -1
+WARNING ymin_track   150.46, ymax_track   1716.94
+WARNING y:   155.00, y1:   0.0043, range: (  148.29.. 1714.65: 1566.36)

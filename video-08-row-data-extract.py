@@ -13,6 +13,7 @@ import statistics
 import functools
 import itertools
 import sys
+import io
 
 default_input_file_name = "'Monotype-tape.avi'"
 
@@ -20,7 +21,7 @@ default_input_file_name = "'Monotype-tape.avi'"
 # == Constants ======================================== #
 # ===================================================== #
 
-MARKER_THRESHOLD    = 220           # Threshold for marker (hole) pixel detection
+MARKER_THRESHOLD    = 200           # Threshold for marker (hole) pixel detection
                                     # See: select_highlight_regions
 
 # Region detection (see adjacent_pixel_region below)
@@ -68,23 +69,30 @@ SPROCKET_TRACK_FILT = 8             # Max sprocket history weighting for filteri
     # (Exponential filter param: https://en.wikipedia.org/wiki/Exponential_smoothing)
     # For values in the range 5..15, the time constant (steps to converge ~63% of target)
     # is (very) approximately SPROCKET_TRACK_FILT+0.5
-SPROCKET_TRDEV_MAX  = 5             # Max detected sprocket deviation from tracked position
+SPROCKET_TRDEV_MAX  = 8             # Max detected sprocket deviation from tracked position
 
 ROW_TRACE_YMIN      = 100           # Row detect: disregard traces with Y less than this
 ROW_TRACE_YMAX      = 1900          # Row detect: disregard traces with Y greater than this
 
+PAUSE_ON_TRDEV      = True          # Pause on tracking deviation exceeded
+PAUSE_ON_BETWEEN    = True          # Pause on trace between columns   
+PAUSE_ON_RANGE      = True          # Pause on data out of range
+PAUSE_ON_MULTIPLE   = True          # Pause on multiple detection of column position
+
 # To assist with debugging...
 
-START_FRAME  = 0
-NOSTOP_FRAME = 0        # Don't pause until here.  Set to zero for normal pause/breakpoints.
+START_FRAME  = 200      # First frame to process, or zero to start at beginning of video
+# START_FRAME  = ????      # First frame to process, or zero to start at beginning of video
+STOP_FRAME   = 0        # Final frame to process, or zero to stop at end of video
+PAUSE_FROM   = 1        # Don't pause until here.  Set to zero for normal pause/breakpoints.
+PAUSE_UNTIL  = 200      # Don't pause after here.  Set to zero for normal pause/breakpoints.
 
-PAUSE_FRAMES = (2, 
-    225, 238,           # WARNING ymax sprocket deviation: ymaxr  1757.02, ymaxt  1751.29, ydev     5.00
-    2418-15, 2418       # WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+PAUSE_FRAMES = (200,
+    24900,              # Row detection looks odd???
     )
 
-LOG_REGION_TRACE_START  = 2418-15
-LOG_REGION_TRACE_END    = 2418
+LOG_REGION_TRACE_START  = 0
+LOG_REGION_TRACE_END    = 0
 
 # No hole for 'O' and 15
 Tape_columns = (
@@ -240,11 +248,31 @@ Caslon_14_matrix = (
 # == Log/debug functions ============================== #
 # ===================================================== #
 
+error_file     = None
+error_frame    = None
+last_frame_num = None
+
+def error(*args):
+    # Print to console and `error_file`
+    global error_file, error_frame, last_frame_num
+    if not error_file:
+        # error_file = io.StringIO()
+        error_file = open("output_errors.txt", "wt")
+    if last_frame_num != error_frame:
+        error_frame = last_frame_num
+        print(f"------- Frame number {error_frame:>6d} -------", file=error_file)    
+    print(*args, file=error_file)
+    return
+
 def log_error(*args):
-    print("ERROR", *args)
+    print("ERROR  ", *args)
+    error("ERROR  ", *args)
+    return
 
 def log_warning(*args):
     print("WARNING", *args)
+    error("WARNING", *args)
+    return
 
 def log_info(*args):
     print(*args)
@@ -252,6 +280,13 @@ def log_info(*args):
 def log_debug(*args):
     # print(*args)
     pass
+
+def break_warning(*args):
+    global paused
+    log_warning(*args)
+    paused = True
+    return
+
 
 # ===================================================== #
 # == Coordinate mapping functions ===================== #
@@ -305,7 +340,7 @@ def open_video_input(filepath):
         # Default resolutions of the frame are obtained.
         # The default resolutions are system dependent.
         # Convert the resolutions from float to integer.
-        frame_width = int(capture.get(3))   # Where is magic number defined???
+        frame_width  = int(capture.get(3))   # Where is magic number defined???
         frame_height = int(capture.get(4))
     else:
         capture      = None
@@ -323,10 +358,11 @@ def open_video_output(filepath, frame_width, frame_height):
     # returns (video_writer)
     #
     writer = cv.VideoWriter(
-        'output.avi',                               # where
-        cv.VideoWriter_fourcc('M','J','P','G'),     # CODEC
-        30,                                         # FPS
-        (frame_width,frame_height)                  # Size
+        filepath,                           # where
+        cv.VideoWriter_fourcc(*'MJPG'),     # CODEC
+        30.0,                               # FPS
+        (frame_width,frame_height),         # Size
+        True                                # RGB?
         )
     return writer
 
@@ -375,12 +411,38 @@ def show_video_frame(frame_label, frame_number, frame_data):
     #   +-----------   |
     #      2           |
     #   ----          /
-    cv.rectangle(frame_show, (10, 2), (100,20), (255,255,255), -1)
-    cv.putText(frame_show, str(frame_number), (15, 15),
-               cv.FONT_HERSHEY_SIMPLEX, 0.5 , (0,0,0))
-    cv.rectangle(frame_show, (10, frame_height-20), (100,frame_height-2), (255,255,255), -1)
-    cv.putText(frame_show, str(frame_number), (15, frame_height-7),
-               cv.FONT_HERSHEY_SIMPLEX, 0.5 , (0,0,0))
+    box_margin_x = 10
+    box_margin_y = 2
+    box_width    = 200
+    box_height   = 38
+    box_text_x   = 15
+    box_text_y   = 7
+    # Text box at top left of frame
+    cv.rectangle(frame_show, 
+        (box_margin_x, box_margin_y), 
+        (box_margin_x+box_width,box_margin_y+box_height), 
+        (255,255,255), -1
+        )
+    cv.putText(frame_show, f"{frame_number:>8d}", 
+        (box_margin_x+box_text_x, box_margin_y+box_height-box_text_y),
+        cv.FONT_HERSHEY_SIMPLEX, 1.2 , (0,0,0), thickness=2
+        )
+    # Text box at bottom left of frame
+    cv.rectangle(frame_show, 
+        (box_margin_x, frame_height-box_margin_y-box_height), 
+        (box_margin_x+box_width,frame_height-box_margin_y), 
+        (255,255,255), -1
+        )
+    cv.putText(frame_show, f"{frame_number:>8d}", 
+        (box_margin_x+box_text_x, frame_height-box_margin_y-box_text_y),
+        cv.FONT_HERSHEY_SIMPLEX, 1.2 , (0,0,0), thickness=2
+        )
+
+    # cv.rectangle(frame_show, (10, frame_height-40), (200,frame_height-2), (255,255,255), -1)
+    # cv.putText(frame_show, str(frame_number), (15, frame_height-7),
+    #            cv.FONT_HERSHEY_SIMPLEX, 1.0 , (0,0,0))
+
+    # Display frame
     cv.imshow(frame_label, frame_show)
     if frame_label not in window_pos:
         # New window: set position
@@ -410,6 +472,7 @@ def write_video_frame_pair(video_writer, frame_number, frame_1, frame_2):
     # Write a pair of frames side-by-side to a video output channel
     if frame_number > 0:       # @@@ Hack to keep demo videos shorter
         frame_pair = np.hstack((frame_1,frame_2))
+        log_info(f"write_video_frame_pair: frame_numbert {frame_number:d}, frame_pair.shape {frame_pair.shape}")
         video_writer.write(frame_pair)
     else:
         frame_pair = None
@@ -825,15 +888,16 @@ class region_trace_closed(region_trace):
         trace_closing   is an open trace that is being closed off
         """
         super(region_trace_closed, self).__init__(trace_closing.frnum, trace_closing.rcoords)
-        self.frend = frend                          # End frame number
-        self.frlen = frend - trace_closing.frnum    # Overall frame extent (length) of trace 
-        self.xcen  = statistics.fmean( (rc.xcen for rc in trace_closing.rcoords) )
-        self.ycen  = statistics.fmean( (rc.ycen for rc in trace_closing.rcoords) )
-        self.xmin  = min( (rc.rpixels.xmin for rc in trace_closing.rcoords) )
-        self.ymin  = min( (rc.rpixels.ymin for rc in trace_closing.rcoords) )
-        self.xmax  = max( (rc.rpixels.xmax for rc in trace_closing.rcoords) )
-        self.ymax  = max( (rc.rpixels.ymax for rc in trace_closing.rcoords) )
-        self.area  = sum( (rc.area         for rc in trace_closing.rcoords) )
+        self.frend    = frend                          # End frame number
+        self.frlen    = frend - trace_closing.frnum    # Overall frame extent (length) of trace 
+        self.xcen     = statistics.fmean( (rc.xcen for rc in trace_closing.rcoords) )
+        self.ycen     = statistics.fmean( (rc.ycen for rc in trace_closing.rcoords) )
+        self.xmin     = min( (rc.rpixels.xmin for rc in trace_closing.rcoords) )
+        self.ymin     = min( (rc.rpixels.ymin for rc in trace_closing.rcoords) )
+        self.xmax     = max( (rc.rpixels.xmax for rc in trace_closing.rcoords) )
+        self.ymax     = max( (rc.rpixels.ymax for rc in trace_closing.rcoords) )
+        self.area     = sum( (rc.area         for rc in trace_closing.rcoords) )
+        self.rejected = False   # May be set true later if trace rejected for any reason
         # log_debug("@@@ region_trace_closed.__init__", str(self))
         return
 
@@ -856,10 +920,13 @@ class region_trace_closed(region_trace):
         """
         Check that trace satisfies basic sanity checks
         """
-        return ( (self.frlen <= TRACE_MAXFRAMES) and
+        if not ( (self.frlen <= TRACE_MAXFRAMES) and
                  (self.ymin  >= ROW_TRACE_YMIN) and 
                  (self.ymax  <= ROW_TRACE_YMAX)
-               )
+               ):
+            self.rejected = True
+            return False
+        return True
 
     def in_sprocket_range(self, sprocket_range):
         """
@@ -868,10 +935,19 @@ class region_trace_closed(region_trace):
         sprocket_range  specifies (estimated) minimum and maximum Y-coordinates of 
                         sprocket holes.
         """
-        return ( (self.frlen <= TRACE_MAXFRAMES) and
-                 (self.ymin  >= sprocket_range[0]-SPROCKET_STDEV_MAX) and 
-                 (self.ymax  <= sprocket_range[1]+SPROCKET_STDEV_MAX)
-               )
+        if self.rejected:
+            return False
+        if sprocket_range is None:
+            return self.is_plausible()
+        if not ( (self.frlen <= TRACE_MAXFRAMES) and
+                 (self.ycen  >= sprocket_range[0] - 2*SPROCKET_TRDEV_MAX) and 
+                 (self.ycen  <= sprocket_range[1] + 2*SPROCKET_TRDEV_MAX)
+               ):
+            # break_warning(f"Trace out of range: frlen {self.frlen}, ycen {self.ycen:8.2f}")
+            # break_warning(f"sprocket range ({sprocket_range[0]:8.2f} .. {sprocket_range[1]:8.2f})")
+            self.rejected = True
+            return False
+        return True
 
     def active(self, frnum):
         """
@@ -1344,8 +1420,9 @@ class row_candidate(object):
     be handled within this class.
     """
 
-    def __init__(self, trace_set=None):
+    def __init__(self, trace_set=None, sprocket_range=None):
         self.traces   = trace_set or region_trace_set()
+        self.sp_range = sprocket_range
         self.residual = self._estimate_linear_fit_residual(self.traces)
         return
 
@@ -1420,7 +1497,7 @@ class row_candidate(object):
 
         (2) the supplied trace along with a subset of traces from the current candidate 
             forms a new candidate, in which case match is returned False and new_row as
-            a new row_cabndidate object.
+            a new row_candidate object.
 
         (3) the supplied trace does not form a row candidate with any traces in the 
             current row_candidate, in which case match returns False and new_row None.
@@ -1435,7 +1512,7 @@ class row_candidate(object):
         The initial criterion applied is to see if it overlaps all other traces in the 
         current row:  if it does then it is accepted.
         """
-        if not trace.is_plausible():
+        if not trace.in_sprocket_range(self.sp_range):
             return (False, None)
         overlaps_set, overlaps_all = self.traces.overlaps_traces(trace)
         if overlaps_all:
@@ -1443,7 +1520,10 @@ class row_candidate(object):
             self.residual = self._estimate_linear_fit_residual(self.traces)
             return (True, None)
         if len(overlaps_set) > 0:
-            new_row_candidate = row_candidate(region_trace_set(trace_set=overlaps_set, trace=trace))
+            new_row_candidate = row_candidate(
+                region_trace_set(trace_set=overlaps_set, trace=trace), 
+                sprocket_range=self.sp_range
+                )
             return (False, new_row_candidate)
         return (False, None)
 
@@ -1469,7 +1549,7 @@ class row_candidate(object):
         The test used is a low residual for a linear fit through all traces including the 
         supplied additional trace.
         """
-        if not trace.is_plausible():
+        if not trace.in_sprocket_range(self.sp_range):
             return False
         if trace in self.traces:
             return False        # Trace already in this row candidate
@@ -1626,7 +1706,7 @@ class row_data(object):
         """
         Construct row data object.
 
-        frnum   observed frame number of row (for display)
+        frnum   averaged observed frame number of row (for display)
         xpos    observed mean X-position of row (for display)
         ymin    observed or estimated minimum-Y sprocket hole position
         ymax    observed or estimated maximum-Y sprocket hole position
@@ -1644,10 +1724,8 @@ class row_data(object):
         """
         Set True or False value for a single hole position.
         """
-        global paused
         if value and self.data[index]:
-            log_warning(f"row_data: set_data({index},{value}) twice")
-            paused = True
+            break_warning(f"row_data: set_data({index},{value}) twice")
         self.data[index] = value
         return
 
@@ -1662,13 +1740,20 @@ class row_data(object):
     def __str__(self):
         return (self.short_str())
 
-    def long_str(self, prefix=""):
-        return f"{prefix}frnum {self.frnum:4d}, xpos {self.xpos:8.2f}, ymin {self.ymin:8.2f}, ymax {self.ymax:8.2f}, data: {self.short_str()}"
+    def range_str(self, index, len):
+        return "".join([ "O" if self.data[i] else "-" for i in range(index, index+len) ])
 
-        return self.traces.long_str(prefix=prefix, t_prefix=t_prefix)
+    def long_str(self, prefix=""):
+        return f"{prefix}frnum {self.frnum:6d}, xpos {self.xpos:8.2f}, ymin {self.ymin:8.2f}, ymax {self.ymax:8.2f}, data: {self.short_str()}"
 
     def short_str(self):
-        return "|" + "".join([ "O" if self.data[i] else "-" for i in range(31) ]) + "|"
+        return (
+            "| " + self.range_str(0,10) + 
+            " "  + self.range_str(10,10) + 
+            " "  + self.range_str(20,10) + 
+            " "  + self.range_str(30,1) 
+            + " |")
+        #return "|" + "".join([ "O" if self.data[i] else "-" for i in range(31) ]) + "|"
 
     def log(self, frnow, logmethod=print, prefix="row_data"):
         logmethod(f"{prefix}: frnow: {frnow:d}, {self.long_str(prefix='')}")
@@ -1804,14 +1889,12 @@ class row_data_accumulator(object):
         d1, n30, n60 = self.map_y1_n30_n60(y1)
         if (n60 < 0) or (n60 > 61):
             # Data out of range
-            log_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
-            log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
-            paused = True
+            break_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+            break_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
         elif (n60%2 == 1):
             # Data between columns
-            log_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
-            log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
-            paused = True
+            break_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+            break_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
         return n30
 
     def extract_row_data(self, frnum, new_rows_detected):
@@ -1829,7 +1912,12 @@ class row_data_accumulator(object):
                 ymin, ymax = self.track_sprocket_holes(r)
                 rd         = self.detect_data_holes(frnum, r, ymin, ymax)
                 rd.log(frnum, logmethod=print)
-                self.row_data.append(rd)
+                # Insert sorted by frame number
+                rd_frnum   = rd.frnum 
+                insert_p   = len(self.row_data)-1   # Probe position to insert after
+                while (insert_p >= 0) and (rd_frnum < self.row_data[insert_p].frnum):
+                    insert_p -= 1
+                self.row_data.insert(insert_p+1, rd)
             self.rows_pending = []
         return
 
@@ -1840,12 +1928,12 @@ class row_data_accumulator(object):
 
         Returns consistent value for initial track, or None
         """
-        log_info(f"init_sprocket_position: sample {sample}")
+        # log_info(f"init_sprocket_position: sample {sample}")
         while len(sample) >= SPROCKET_SAMPLE_MIN:
             s_mean = statistics.fmean(sample)
             s_dev  = statistics.stdev(sample, s_mean)
             s_med  = statistics.median(sample)
-            log_info(f"init_sprocket_position: s_mean {s_mean:f}, s_dev {s_dev:f}, s_med {s_med:f}, n: {len(sample):d}")
+            log_info(f"init_sprocket_position: s_mean {s_mean:8.4f}, s_dev {s_dev:8.4f}, s_med {s_med:8.4f}, n: {len(sample):d}")
             if s_dev <= SPROCKET_STDEV_MAX:
                 return s_mean
             # Variance too large - remove outliers
@@ -1938,16 +2026,24 @@ class row_data_accumulator(object):
         # Check for large value swings.  In each case of ymin and ymax:
         # (a) if the deviation is too large, use last track value
         # (b) otherwise: updated tracked value
-        ydev  = SPROCKET_TRDEV_MAX
-        if abs(yminr-ymint) > ydev:
-            log_warning(f"ymin sprocket deviation: yminr {yminr:8.2f}, ymint {ymint:8.2f}, ydev {ydev:8.2f}")
-            paused = True
+        ytrdev_max  = SPROCKET_TRDEV_MAX
+        ymindev     = abs(yminr-ymint)
+        ymaxdev     = abs(ymaxr-ymaxt)
+        if ymindev > ytrdev_max:
+            log_warning(f"ymin sprocket deviation: "
+                f"yminr {yminr:8.2f}, ymint {ymint:8.2f}, "
+                f"ymindev {ymindev:8.2f}, ytrdev_max {ytrdev_max:8.2f}"
+                )
+            paused = PAUSE_ON_TRDEV
             yminr = ymint
         else:
             self.ymin_track = (ymint*old_weight + yminr)/new_weight
-        if abs(ymaxr-ymaxt) > ydev:
-            log_warning(f"ymax sprocket deviation: ymaxr {ymaxr:8.2f}, ymaxt {ymaxt:8.2f}, ydev {ydev:8.2f}")
-            paused = True
+        if ymaxdev > ytrdev_max:
+            log_warning(f"ymax sprocket deviation: "
+                f"ymaxr {ymaxr:8.2f}, ymaxt {ymaxt:8.2f}, "
+                f"ymaxdev {ymaxdev:8.2f}, ytrdev_max {ytrdev_max:8.2f}"
+                )
+            paused = PAUSE_ON_TRDEV
             ymaxr = ymaxt
         else:
             self.ymax_track = (ymaxt*old_weight + ymaxr)/new_weight
@@ -1955,7 +2051,7 @@ class row_data_accumulator(object):
         # Return raw data points if selected, otherwise previous tracking value
         return yminr, ymaxr
 
-    def detect_data_holes(self, frnum, row_detected, ymin, ymax):
+    def detect_data_holes(self, frnow, row_detected, ymin, ymax):
         """
         Examine data in detected row and return data values corresponding to the
         detected markers.
@@ -1972,7 +2068,6 @@ class row_data_accumulator(object):
                         the supplied row.  The detected holes are represented as
                         an array of Boolean values.
         """
-        global paused, step
         yrng     = ymax - ymin 
         traces   = row_detected.traces.rtraces
         frnum    = round(statistics.fmean( ( (t.frnum + t.frend)/2 for t in traces ) ))
@@ -1985,22 +2080,34 @@ class row_data_accumulator(object):
             if (n60 < 0) or (n60 > 61):
                 # Data out of range
                 #@@@@ can be caused by double-detection of sprocket trace@@@@ ??
-                log_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
-                log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
-                log_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
-                paused = True
+                break_warning(f"Detected hole out of range: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+                break_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
+                break_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
             elif (n60%2 == 1):
                 # Data between columns
-                log_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
-                log_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
-                log_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
-                paused = True
+                break_warning(f"Detected hole between columns: y1 {y1:8.4f}, d1 {d1:8.4f}, n60 {n60:d}, n30 {n30:d}")
+                break_warning(f"ymin_track {self.ymin_track:8.2f}, ymax_track  {self.ymax_track:8.2f}")
+                break_warning(f"y: {y:8.2f}, y1: {y1:8.4f}, range: ({ymin:8.2f}..{ymax:8.2f}:{yrng:8.2f})")
             if n30 >= 0 and n30 <= 30:
                 rd.set_data(n30, True)
             # n30 = self.map_y1_n(y1)
             # if n30 >= 0 and n30 <= 30:
             #     rd.set_data(n30, True)
         return rd
+
+    def tracked_sprocket_position(self):
+        """
+        If sprocket holes are being tracked, returns current tracked values.
+
+        When available, the values are fed back for additional screening of traces and/or rows.
+
+        returns:        (ymin_track, ymax_track) are current Y-values of tracked sprocket holes,
+                        otherwise None if no sprocket hole tracking has been established.
+        """
+        if self.tracking:
+            return (self.ymin_track, self.ymax_track)
+        return None
+
 
     def draw_row_labels(self, frame_show, frnow, colour):
         """
@@ -2017,30 +2124,13 @@ class row_data_accumulator(object):
                 ypos = self.ymin_track + y1*(self.ymax_track-self.ymin_track)
                 cx, cy = map_frame_pos(frnow, frnow, xpos, ypos)
                 # log_info(f"draw_row_labels: {i}, {(cx, cy)}, {colour}")
-                cv.putText(frame_show, str(i), (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.5 , colour)
+                cv.putText(frame_show, str(i), (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.6 , colour)
         return
-
 
 
 # ----------------------------------------- #
 # -- Analysis pipeline functions ---------- #
 # ----------------------------------------- #
-
-# Look for completed row of tape data in trace data.
-#
-#
-#
-# frnum                 frame number currently processed.  No new traces may end before this frame number.
-# trace_data            is a list of closed region traces, ordered by ending frame number, which have not yet
-#                       been definitively determined as belonging to a completed row, or no row at all.
-#
-# Returns:
-#
-# new_rows              is a list of new completed rows, or empty if none can be determined from
-#                       the supplied trace data.
-# updated_trace_data    is the supplied trace data excluding any region traces that have been detected 
-#                       as belonging to a completed row, or determined to be not belonging to any row.
-#
 
 """
 Overview of row detection...
@@ -2055,15 +2145,17 @@ Overview of row detection...
    - how to characterize this?
 """
 
-def find_initial_row_candidates(frnum, closed_traces):
+def find_initial_row_candidates(frnum, closed_traces, sprocket_range):
     """
     Find an initial set of row candidates among the supplied traces.
 
         row_candidates = find_initial_row_candidates(frnum, traces)
 
-    frnum       is the current frame number
-    traces      is the current set of traces that have not yet been determined 
-                as belonging to any row, or to no row at all.
+    frnum           is the current frame number
+    closed_traces   is the current set of closed traces that have not yet been 
+                    determined as belonging to any row, or to no row at all.
+    sprocket_range  a pair giving the min- and max- tracked values for sprocket
+                    hole posiutions.
 
     Returns a list of `row_candidate` objects, each of which contains a
     `region_trace_set` value.
@@ -2084,8 +2176,9 @@ def find_initial_row_candidates(frnum, closed_traces):
         # Add new candidate(s) if trace didn't fully overlap any existing candidate
         if not extend_existing:
             row_candidates.extend(new_candidates)
-        if not used_candidate:
-            row_candidates.append(row_candidate(region_trace_set(trace=t)))
+        if not used_candidate and t.in_sprocket_range(sprocket_range):
+            # New row candidate for trace
+            row_candidates.append(row_candidate(region_trace_set(trace=t), sprocket_range))
     return row_candidates
 
 def find_extended_row_candidates(frnum, row_candidates, traces):
@@ -2157,30 +2250,15 @@ def find_preferred_row_candidate(frnum, row_candidates):
                         # Deselect current preferred row as there may be a better one we cannot use yet
                         preferred.log(frnum, prefix="Deselect")
                         preferred     = None
-
-    # for c in row_candidates:
-    #     if c.row_complete(frnum):
-    #         if (c.residual < preferred_res):
-    #             c.log(frnum, prefix=f"Try candidate (res < {preferred_res:6.3f})")
-    #             if not trace_overlap(c, unavailable_rows):
-    #                 # Select this candidate if no overlap with any incomplete row
-    #                 c.log(frnum, prefix="Select")
-    #                 preferred_res = c.residual
-    #                 preferred     = c
-    #             elif preferred and trace_overlap(c, [preferred]):
-    #                 # Deselect current preferred option as there is a better one we cannot use yet
-    #                 preferred.log(frnum, prefix="Deselect")
-    #                 preferred     = None
-
     return preferred
 
-def remove_spurious_traces(frnum, traces, sprocket_range):
+def remove_spurious_traces(frnum, traces):
     """
     Returns list of traces that may still be considered "active".
 
         active_traces = remove_spurious_traces(frnum, traces)
     """
-    return [ t for t in traces if t.in_sprocket_range(sprocket_range) and t.active(frnum) ]
+    return [ t for t in traces if t.is_plausible() and t.active(frnum) ]
 
 def draw_rows(
         frame_show, frnum, rows, colour_border, 
@@ -2260,12 +2338,16 @@ def draw_row_data(frame_show, frame_number, row_data_accum):
     return frame_show
 
 
+
+
+
+
 # ----------------------------------------- #
 # -- Main program ------------------------- #
 # ----------------------------------------- #
 
 def main():
-    global paused, step, window_pos
+    global paused, step, window_pos, last_frame_num
 
     parser = argparse.ArgumentParser(description='This program uses OpenCV to read and process a video of \
                                                   a Monotype system paper tape.')
@@ -2305,6 +2387,7 @@ def main():
     sprocket_range = [ROW_TRACE_YMIN, ROW_TRACE_YMAX]
 
     row_data_accum = row_data_accumulator()     # Data extracted from detected rows
+    last_frame_num = 0
 
     while True:
 
@@ -2313,9 +2396,14 @@ def main():
             frame_number, frame = read_video_frame(video_capture)
             if frame is None:
                 break
+            last_frame_num = frame_number       # Save for exit
 
             if frame_number < START_FRAME:
+                if frame_number%1000 == 0:
+                    print(f"Skipping to frame {START_FRAME}, current frame {frame_number}")
                 continue
+            if (STOP_FRAME > 0) and (frame_number > STOP_FRAME):
+                break
 
             log_info(f"\n***** Frame number {frame_number:d} *****")
 
@@ -2367,7 +2455,7 @@ def main():
             if len(new_traces) > 0:
                 # Update buffer of traces waiting to be sorted into rows
                 closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
-                closed_traces = remove_spurious_traces(frame_number, closed_traces, sprocket_range)
+                closed_traces = remove_spurious_traces(frame_number, closed_traces)
                 while (True):
                     log_info(f"## Assemble and test candidates ## frame_number {frame_number:d}, num traces {len(closed_traces):d}")
                     # for t in closed_traces:
@@ -2377,7 +2465,7 @@ def main():
                     # no trace is assigned to more than one row/
                     #
                     # Build an initial set of row candidates
-                    row_candidates = find_initial_row_candidates(frame_number, closed_traces)
+                    row_candidates = find_initial_row_candidates(frame_number, closed_traces, sprocket_range)
                     # for c in row_candidates:
                     #     c.log(frame_number, prefix=f"Initial candidate")
                     # Add extra traces to row candidates
@@ -2428,18 +2516,23 @@ def main():
             # Extract data from rows
             # NOTE: new_rows is a list of `row_candidate` values
             row_data_accum.extract_row_data(frame_number, new_rows)
+            sprocket_track = row_data_accum.tracked_sprocket_position()
+            if sprocket_track:
+                sprocket_range[0] = sprocket_track[0]
+                sprocket_range[1] = sprocket_track[1]
             draw_row_data(frame_rows, frame_number, row_data_accum)
 
             # Display video frame of visualized data
             frame_row_data = show_video_frame("row_data", frame_number, frame_rows)
 
-            # Write the frame into the file 'output.avi'
+            # Write the frame into the output file
             write_video_frame_pair(video_writer, frame_number, frame_show_orig, frame_row_data)
 
             # Check for data breakpoint, etc.
             if frame_number in PAUSE_FRAMES:
                 paused = True
-            if (frame_number < NOSTOP_FRAME):
+            if ( (frame_number < PAUSE_FROM) or 
+                 ( (PAUSE_UNTIL > 0) and (frame_number > PAUSE_UNTIL) ) ):
                 paused = False
 
         # Check for keyboard interrupt, or move to next frame after 20ms
@@ -2464,33 +2557,36 @@ def main():
             break
 
     # Extract and write final row data to a file.
+    log_info(f"Finished processing: writing output.txt ({len(row_data_accum.row_data):d} rows from {last_frame_num:d} frames)")
 
     with open("output.txt", mode="wt", encoding="UTF-8") as dataout:
-        dataout.write(f"Decoded data: {len(row_data_accum.row_data):d} rows from {frame_number:d} frames.\n")
+        dataout.write(f"Decoded data: {len(row_data_accum.row_data):d} rows from {last_frame_num:d} frames.\n")
         dataout.write("\n")
-        dataout.write("-------------------------------------------\n")
-        for i, r in enumerate(row_data_accum.row_data):
-            dataout.write(f"row {i:>4d}: {str(r)}\n")
-        dataout.write("-------------------------------------------\n")
+        dataout.write("------------------------------------------------------------------\n")
+        rd_prev = None
+        for i, rd in enumerate(row_data_accum.row_data):
+            dataout.write(f"row {i:>4d}: frame {rd.frnum:>5d}, data {str(rd)}\n")
+            if rd_prev and (rd.frnum < rd_prev.frnum):
+                break_warning("Row {i:>4d} at frame {rd.frnum:6d} follows row at frame {rd_prev.frnum:6d}")
+            rd_prev = rd
+        dataout.write("------------------------------------------------------------------\n")
         dataout.write("\n")
         dataout.write("End of data\n")
-
     log_info(f"Written {len(row_data_accum.row_data):d} rows of data to file output.txt")
 
     # Shut down on exit
-
     log_info("closing down")
     close_video_input(video_capture)
     close_video_output(video_writer)
     log_info("video streams closed")
     close_video_windows()
     log_info("end of main")
+    return
 
 # Top level script
 
 paused = False
 step   = False
 main()
-# test_row_detect()
 
 # End.

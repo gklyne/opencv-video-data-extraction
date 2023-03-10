@@ -8,6 +8,7 @@ cvenv
 *.mov
 *.m4v
 output*
+*-output.*
 
 # Packages
 *.egg

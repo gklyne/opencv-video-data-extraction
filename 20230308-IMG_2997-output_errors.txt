@@ -1,0 +1,362 @@
+------- Frame number    640 -------
+WARNING ymax sprocket deviation: ymaxr  1129.71, ymaxt  1727.16, ymaxdev   597.46, ytrdev_max     8.00
+ -- Sprocket hole torn, missing, dara good
+
+------- Frame number  11040 -------
+WARNING Detected hole out of range: y1   0.0069, d1  -0.0399, n60 -2, n30 -1
+WARNING ymin_track   167.81, ymax_track   1732.18
+WARNING y:   177.70, y1:   0.0069, range: (  166.97.. 1731.91: 1564.93)
+  -- Sprocket not fully merged (11026), data good -- increase Y gap for merge?
+
+------- Frame number  11278 -------
+WARNING row_data: set_data(3,True) twice
+  -- Sprocket not fully merged (11257), data good -- increase Y gap for merge?
+
+------- Frame number  11846 -------
+WARNING Detected hole out of range: y1   0.0075, d1  -0.0392, n60 -2, n30 -1
+WARNING ymin_track   164.40, ymax_track   1728.37
+WARNING y:   176.50, y1:   0.0075, range: (  164.80.. 1730.40: 1565.60)
+  -- Sprocket not fully merged (11830), data good -- increase Y gap for merge?
+
+------- Frame number  16712 -------
+WARNING ymin sprocket deviation: yminr   462.54, ymint   160.67, ymindev   301.87, ytrdev_max     8.00
+  -- Sprocket hole detected but not included in row, data good
+  -- Tape skew 16694..16698, top sprocket closed before lower sprocket visible
+  -- Investigate row-fit residual?
+
+------- Frame number  16736 -------
+WARNING ymin sprocket deviation: yminr   461.50, ymint   159.03, ymindev   302.47, ytrdev_max     8.00
+WARNING Detected hole between columns: y1   0.6142, d1   0.6250, n60 37, n30 19
+WARNING ymin_track   159.03, ymax_track   1721.03
+WARNING y:  1116.32, y1:   0.6142, range: (  159.03.. 1717.70: 1558.67)
+  -- Sprocket hole detected but not included in row, data good
+
+------- Frame number  16830 -------
+WARNING ymin sprocket deviation: yminr   369.54, ymint   158.72, ymindev   210.83, ytrdev_max     8.00
+  -- Sprocket hole detected but not included in row, data good
+
+------- Frame number  17918 -------
+WARNING Detected hole out of range: y1   0.0061, d1  -0.0407, n60 -2, n30 -1
+WARNING ymin_track   168.13, ymax_track   1732.90
+WARNING y:   175.71, y1:   0.0061, range: (  166.23.. 1732.39: 1566.16)
+  -- Sprocket not fully merged (17905), data good -- increase Y gap for merge?
+
+------- Frame number  18396 -------
+WARNING Detected hole out of range: y1   0.0072, d1  -0.0395, n60 -2, n30 -1
+WARNING ymin_track   166.23, ymax_track   1730.59
+WARNING y:   178.11, y1:   0.0072, range: (  166.89.. 1733.07: 1566.18)
+  -- Sprocket not fully merged (18380), data good -- increase Y gap for merge?
+
+------- Frame number  18968 -------
+WARNING Detected hole out of range: y1   0.0078, d1  -0.0388, n60 -2, n30 -1
+WARNING ymin_track   165.74, ymax_track   1729.80
+WARNING y:   177.81, y1:   0.0078, range: (  165.60.. 1731.35: 1565.75)
+  -- Sprocket not fully merged (18953), data good -- increase Y gap for merge?
+
+------- Frame number  19907 -------
+WARNING Detected hole out of range: y1   0.0051, d1  -0.0418, n60 -3, n30 -1
+WARNING ymin_track   166.23, ymax_track   1731.10
+WARNING y:   176.62, y1:   0.0051, range: (  168.63.. 1735.37: 1566.74)
+  -- Sprocket not fully merged (19893), data good -- increase Y gap for merge?
+
+------- Frame number  20318 -------
+WARNING Detected hole out of range: y1   0.0071, d1  -0.0396, n60 -2, n30 -1
+WARNING ymin_track   165.90, ymax_track   1730.81
+WARNING y:   177.52, y1:   0.0071, range: (  166.43.. 1732.35: 1565.92)
+  -- Sprocket not fully merged (20304), data good -- increase Y gap for merge?
+
+------- Frame number  20724 -------
+WARNING Detected hole out of range: y1   0.0080, d1  -0.0386, n60 -2, n30 -1
+WARNING ymin_track   166.28, ymax_track   1731.39
+WARNING y:   178.53, y1:   0.0080, range: (  165.99.. 1733.81: 1567.82)
+  -- Sprocket not fully merged (20709), data good -- increase Y gap for merge?
+
+------- Frame number  24226 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   178.74, ymax_track   1742.87
+WARNING y:  1284.89, y1:   0.7053, range: (  181.36.. 1745.88: 1564.52)
+  -- Looks as if sprocket tracking may be missing?
+  -- Or hole position just off?
+  -- Data good
+
+------- Frame number  24952 -------
+WARNING ymin sprocket deviation: yminr   458.54, ymint   159.11, ymindev   299.43, ytrdev_max     8.00
+WARNING Detected hole between columns: y1   0.6141, d1   0.6249, n60 37, n30 19
+WARNING ymin_track   159.11, ymax_track   1721.55
+WARNING y:  1114.34, y1:   0.6141, range: (  159.11.. 1714.63: 1555.52)
+  -- Sprocket hole detected but not included in row, data good
+  -- Tape is rather skewed
+
+------- Frame number  27756 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+WARNING ymin_track   179.78, ymax_track   1743.98
+WARNING y:  1289.13, y1:   0.7055, range: (  185.04.. 1749.98: 1564.93)
+  -- Hole position off?  Tape skew?
+  -- Data good
+
+------- Frame number  27900 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   186.83, ymax_track   1752.14
+WARNING y:  1292.52, y1:   0.7055, range: (  187.88.. 1753.69: 1565.81)
+  -- Hole position off? Tape skew? 
+  -- Data good
+
+------- Frame number  27907 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   186.98, ymax_track   1752.37
+WARNING y:  1292.55, y1:   0.7052, range: (  188.14.. 1754.21: 1566.08)
+  -- Hole position off? Tape skew? 
+  -- Data good
+
+------- Frame number  27913 -------
+WARNING Detected hole between columns: y1   0.7051, d1   0.7245, n60 43, n30 22
+WARNING ymin_track   187.12, ymax_track   1752.61
+WARNING y:  1292.60, y1:   0.7051, range: (  188.25.. 1754.50: 1566.25)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  27978 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   188.19, ymax_track   1753.62
+WARNING y:  1291.08, y1:   0.7052, range: (  187.50.. 1752.44: 1564.94)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28230 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   188.06, ymax_track   1754.00
+WARNING y:  1293.39, y1:   0.7052, range: (  188.85.. 1755.16: 1566.31)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28242 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   188.15, ymax_track   1754.08
+WARNING y:  1293.05, y1:   0.7054, range: (  188.00.. 1754.58: 1566.58)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28268 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   188.12, ymax_track   1753.66
+WARNING y:  1291.77, y1:   0.7054, range: (  188.12.. 1752.60: 1564.49)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28366 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   187.61, ymax_track   1752.80
+WARNING y:  1293.03, y1:   0.7054, range: (  188.92.. 1754.08: 1565.16)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28379 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   188.02, ymax_track   1753.21
+WARNING y:  1293.63, y1:   0.7052, range: (  189.72.. 1755.01: 1565.29)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28392 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   188.38, ymax_track   1753.62
+WARNING y:  1293.96, y1:   0.7054, range: (  189.66.. 1755.22: 1565.55)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28489 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   187.25, ymax_track   1752.28
+WARNING y:  1291.38, y1:   0.7053, range: (  187.28.. 1752.77: 1565.49)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28585 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   188.09, ymax_track   1753.19
+WARNING y:  1291.00, y1:   0.7053, range: (  187.21.. 1752.13: 1564.92)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28777 -------
+WARNING Detected hole between columns: y1   0.7050, d1   0.7244, n60 43, n30 22
+WARNING ymin_track   187.67, ymax_track   1753.72
+WARNING y:  1293.82, y1:   0.7050, range: (  189.33.. 1756.02: 1566.69)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28841 -------
+WARNING Detected hole between columns: y1   0.7050, d1   0.7244, n60 43, n30 22
+WARNING ymin_track   186.62, ymax_track   1752.47
+WARNING y:  1287.70, y1:   0.7050, range: (  183.75.. 1749.66: 1565.91)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  28959 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   185.65, ymax_track   1751.12
+WARNING y:  1292.09, y1:   0.7054, range: (  187.34.. 1753.44: 1566.11)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29006 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+WARNING ymin_track   185.79, ymax_track   1751.63
+WARNING y:  1289.55, y1:   0.7055, range: (  185.04.. 1750.65: 1565.61)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29051 -------
+WARNING Detected hole between columns: y1   0.7051, d1   0.7245, n60 43, n30 22
+WARNING ymin_track   184.90, ymax_track   1750.45
+WARNING y:  1288.58, y1:   0.7051, range: (  185.18.. 1750.04: 1564.86)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29347 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   184.99, ymax_track   1749.99
+WARNING y:  1290.35, y1:   0.7053, range: (  186.36.. 1751.71: 1565.34)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29365 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   185.66, ymax_track   1750.88
+WARNING y:  1291.93, y1:   0.7052, range: (  187.46.. 1753.63: 1566.17)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29379 -------
+WARNING Detected hole between columns: y1   0.7050, d1   0.7244, n60 43, n30 22
+WARNING ymin_track   186.24, ymax_track   1751.53
+WARNING y:  1292.42, y1:   0.7050, range: (  188.32.. 1754.39: 1566.07)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29397 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   186.64, ymax_track   1752.14
+WARNING y:  1291.34, y1:   0.7052, range: (  187.57.. 1752.87: 1565.30)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29403 -------
+WARNING Detected hole between columns: y1   0.7049, d1   0.7243, n60 43, n30 22
+WARNING ymin_track   186.70, ymax_track   1752.26
+WARNING y:  1291.13, y1:   0.7049, range: (  187.17.. 1753.24: 1566.08)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29450 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   186.31, ymax_track   1751.89
+WARNING y:  1289.28, y1:   0.7052, range: (  185.11.. 1750.96: 1565.85)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  29667 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+WARNING ymin_track   186.15, ymax_track   1751.79
+WARNING y:  1292.12, y1:   0.7055, range: (  187.15.. 1753.31: 1566.17)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30132 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   186.72, ymax_track   1751.98
+WARNING y:  1290.69, y1:   0.7054, range: (  186.91.. 1751.70: 1564.79)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30418 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+WARNING ymin_track   188.49, ymax_track   1754.13
+WARNING y:  1295.35, y1:   0.7055, range: (  190.82.. 1756.41: 1565.60)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30523 -------
+WARNING Detected hole between columns: y1   0.7055, d1   0.7250, n60 43, n30 22
+WARNING ymin_track   187.38, ymax_track   1752.70
+WARNING y:  1289.72, y1:   0.7055, range: (  185.39.. 1750.69: 1565.30)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30548 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   187.00, ymax_track   1752.29
+WARNING y:  1291.05, y1:   0.7053, range: (  187.12.. 1752.39: 1565.28)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30555 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   187.08, ymax_track   1752.42
+WARNING y:  1291.95, y1:   0.7053, range: (  187.74.. 1753.39: 1565.65)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30934 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   187.20, ymax_track   1752.48
+WARNING y:  1289.33, y1:   0.7054, range: (  185.01.. 1750.52: 1565.51)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  30973 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   185.97, ymax_track   1751.06
+WARNING y:  1289.26, y1:   0.7054, range: (  185.61.. 1750.22: 1564.61)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  31030 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   186.37, ymax_track   1751.41
+WARNING y:  1290.71, y1:   0.7054, range: (  186.65.. 1751.75: 1565.11)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  31311 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7247, n60 43, n30 22
+WARNING ymin_track   185.31, ymax_track   1750.55
+WARNING y:  1289.45, y1:   0.7052, range: (  185.12.. 1751.05: 1565.93)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  31543 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   184.13, ymax_track   1749.40
+WARNING y:  1289.09, y1:   0.7054, range: (  185.14.. 1750.22: 1565.08)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  31707 -------
+WARNING Detected hole between columns: y1   0.7054, d1   0.7249, n60 43, n30 22
+WARNING ymin_track   185.57, ymax_track   1751.11
+WARNING y:  1291.43, y1:   0.7054, range: (  187.07.. 1752.61: 1565.54)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  31785 -------
+WARNING Detected hole between columns: y1   0.7053, d1   0.7248, n60 43, n30 22
+WARNING ymin_track   185.76, ymax_track   1751.27
+WARNING y:  1288.82, y1:   0.7053, range: (  185.17.. 1749.86: 1564.69)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  32307 -------
+WARNING Detected hole between columns: y1   0.7047, d1   0.7241, n60 43, n30 22
+WARNING ymin_track   185.60, ymax_track   1751.57
+WARNING y:  1290.81, y1:   0.7047, range: (  186.50.. 1753.57: 1567.07)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
+------- Frame number  32484 -------
+WARNING Detected hole between columns: y1   0.7052, d1   0.7246, n60 43, n30 22
+WARNING ymin_track   187.33, ymax_track   1752.95
+WARNING y:  1291.25, y1:   0.7052, range: (  188.13.. 1752.41: 1564.28)
+  -- Hole position off? Tape lifting? 
+  -- Data good
+
