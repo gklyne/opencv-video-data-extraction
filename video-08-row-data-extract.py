@@ -15,7 +15,8 @@ import itertools
 import sys
 import io
 
-default_input_file_name = "'Monotype-tape.avi'"
+default_input_file_name  = "'default-input.avi'"
+default_output_file_name = "'default-output.avi'"
 
 # ===================================================== #
 # == Constants ======================================== #
@@ -2338,10 +2339,6 @@ def draw_row_data(frame_show, frame_number, row_data_accum):
     return frame_show
 
 
-
-
-
-
 # ----------------------------------------- #
 # -- Main program ------------------------- #
 # ----------------------------------------- #
@@ -2352,6 +2349,7 @@ def main():
     parser = argparse.ArgumentParser(description='This program uses OpenCV to read and process a video of \
                                                   a Monotype system paper tape.')
     parser.add_argument('--input', type=str, help='Path to a video of a Monotype system tape.', default=default_input_file_name)
+    parser.add_argument('--output', type=str, help='Path of output video with data visualization.', default=default_output_file_name)
     parser.add_argument('--algo', type=str, help='Background subtraction method (KNN, MOG2).', default='MOG2')
     args = parser.parse_args()
 
@@ -2369,7 +2367,7 @@ def main():
     log_info("frame_height", frame_height, "frame_width", frame_width)
 
     video_writer = open_video_output(
-            'output.avi',                   # where
+            args.output,                    # where
             frame_width*2, frame_height     # size
         )
 
