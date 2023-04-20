@@ -5,13 +5,29 @@
 # python video-08-row-data-extract.py --input=20210914-monotype-tape-reader.mov
 # python video-08-row-data-extract.py --input=/Users/graham/Work/Monotype-Compositions/20221024-IMG_2690.mov
 # python video-08-row-data-extract.py --input=20230226-input-IMG_2977.MOV
+# python video-08-row-data-extract.py --input=20230226-input-IMG_2977.MOV
+# python video-08-row-data-extract.py \
+#     --input=videos/20230308-IMG_2997-input.MOV \
+#     --output=videos/20230308-IMG_2997-output.avi
+# python video-08-row-data-extract.py \
+#     --input=data/20230415-IMG_3071-colophon-input.MOV \
+#     --output=data/20230415-IMG_3071-colophon-output.avi
+
+# FILE_STEM="20230415-IMG_3071-colophon"
+FILE_STEM="20230416-IMG_3082-intro"
+FILE_DIR="."
 
 TIME_START=$(date)
 SECONDS=0
 python video-08-row-data-extract.py \
-    --input=videos/20230308-IMG_2997-input.MOV \
-    --output=videos/20230308-IMG_2997-output.avi
+ --input=data/${FILE_STEM}-input.MOV \
+ --output=${FILE_DIR}/${FILE_STEM}-output.avi \
+
 TIME_END=$(date +"%T")
 echo "Started $TIME_START, completed $TIME_END, duration ${SECONDS}s"
+
+mv output.txt ${FILE_DIR}/${FILE_STEM}-output.txt
+mv output_errors.txt ${FILE_DIR}/${FILE_STEM}-output_errors.txt
+
 
 # https://stackoverflow.com/questions/8903239/how-can-i-calculate-time-elapsed-in-a-bash-script

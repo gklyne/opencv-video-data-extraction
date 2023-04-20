@@ -45,7 +45,7 @@ ROW_FRAME_LOOKAHEAD = 4             # Frame lookahead when determining end of ro
 
 ROW_FRAME_MAXGAP    = 15            # Maximum gap between frames comprising a row
 
-ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
+_UNUSED_ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
 
 # NOTE: MAX_ADD_RESIDUAL is used when adding a non-overlapping trace to a row candidate.
 # Overlapping traces are added unconditionally, and MAX_ROW_RESIDUAL used to decide
@@ -82,14 +82,17 @@ PAUSE_ON_MULTIPLE   = True          # Pause on multiple detection of column posi
 
 # To assist with debugging...
 
-START_FRAME  = 200      # First frame to process, or zero to start at beginning of video
+START_FRAME  = 10500        # First frame to process, or zero to start at beginning of video
 # START_FRAME  = ????      # First frame to process, or zero to start at beginning of video
-STOP_FRAME   = 0        # Final frame to process, or zero to stop at end of video
+STOP_FRAME   = 11000        # Final frame to process, or zero to stop at end of video
 PAUSE_FROM   = 1        # Don't pause until here.  Set to zero for normal pause/breakpoints.
-PAUSE_UNTIL  = 200      # Don't pause after here.  Set to zero for normal pause/breakpoints.
+PAUSE_UNTIL  = 11000        # Don't pause after here.  Set to zero for normal pause/breakpoints.
 
 PAUSE_FRAMES = (200,
-    24900,              # Row detection looks odd???
+    10630, 10650,
+    10680, 10692, 10696,
+    10700,
+    # 24900,              # Row detection looks odd???
     )
 
 LOG_REGION_TRACE_START  = 0
@@ -473,7 +476,7 @@ def write_video_frame_pair(video_writer, frame_number, frame_1, frame_2):
     # Write a pair of frames side-by-side to a video output channel
     if frame_number > 0:       # @@@ Hack to keep demo videos shorter
         frame_pair = np.hstack((frame_1,frame_2))
-        log_info(f"write_video_frame_pair: frame_numbert {frame_number:d}, frame_pair.shape {frame_pair.shape}")
+        log_info(f"write_video_frame_pair: frame_number {frame_number:d}, frame_pair.shape {frame_pair.shape}")
         video_writer.write(frame_pair)
     else:
         frame_pair = None
@@ -1470,6 +1473,21 @@ class row_candidate(object):
         self.traces.draw(frame_show, frnow, colour_border, colour_fill)
         return
 
+    def row_overlaps_any(self, rows):
+        """
+        Returns True if the current row candidate contains any trace that is contained
+        in any of the row candidates in a supplied list.
+
+        rows        is a list of row candidates against which the current candidate
+                    is tested.
+        """
+        # NOTE: multiple iterations over `rows` - don't use generator.
+        for t in self.traces:
+            for r in rows:
+                if t in r.traces:
+                    return True
+        return False
+
     def row_initial_trace(self, trace):
         """
         Tests a supplied trace to see if it might be a seed candidate in the current
@@ -1683,7 +1701,7 @@ class row_candidate(object):
                    )
         return complete
 
-    def row_orphaned(self, frnum):
+    def _unused_row_orphaned(self, frnum):
         """
         Returns `True` if the current row candidate is considered "orphaned".
 
@@ -1691,7 +1709,7 @@ class row_candidate(object):
         traces can be added to it.
         """
         rowgap   = frnum - self.traces.maxfrend
-        return (rowgap > ROW_FRAME_ORPHAN)
+        return (rowgap > _UNUSED_ROW_FRAME_ORPHAN)
 
 
 # ----------------------------------------- #
@@ -2199,7 +2217,7 @@ def find_extended_row_candidates(frnum, row_candidates, traces):
                 pass
     return row_candidates
 
-def trace_overlap(row_candidate, row_candidates):
+def _unused_trace_overlap(row_candidate, row_candidates):
     """
     Does any trace in `row_candidate` appear in any of `row_candidates`?
     """
@@ -2210,7 +2228,29 @@ def trace_overlap(row_candidate, row_candidates):
                 return True
     return False
 
-def find_preferred_row_candidate(frnum, row_candidates):
+def find_available_open_row_candidates(frnum, row_candidates):
+    """
+    Sort row candidates and pick out those that are unavailable for consideration
+    as a best candidate because they are not complete (more traces could be added),
+    and those that are available for consideration because they are complete and
+    have a residual that is less than MAX_ROW_RESIDUAL.
+
+    frnum           is number of frame currently being processed
+    row_candidates  is a list of row candidates from which selections may be made.
+
+    returns a pair of lists of available row candidates (available_rows, open_rows)
+    """
+    available_rows = []
+    open_rows      = []
+    for c in row_candidates:
+        if not c.row_complete(frnum):
+            open_rows.append(c)
+        elif c.residual < MAX_ROW_RESIDUAL:
+            # c.log(frnum, prefix=f"Row candidate")
+            available_rows.append(c)
+    return (available_rows, open_rows)
+
+def _unused_find_preferred_row_candidate(frnum, row_candidates):
     """
     Select a preferred row candidate from all those assembled.
     """
@@ -2226,29 +2266,78 @@ def find_preferred_row_candidate(frnum, row_candidates):
     preferred_res = MAX_ROW_RESIDUAL*2
     preferred     = None
 
-    # The following logic looks for a pair or row candidates, the sum of whose
-    # residuals is less than the sum of all other candidate pairs.
-    # The first of these to appear is selected.
+    # The following logic looks for a pair of non-overlapping row candidates, 
+    # the sum of whose residuals is less than the sum of all other candidate 
+    # pairs.  The first of these to appear is selected.
     #
     # This logic is an attempt to take account of additional, better candidate 
     # rows that might otherwise be blocked by selecting the best single candidate.
     for c1 in available_rows:
         for c2 in available_rows:
-            if not trace_overlap(c2, [c1]):
+            if not c2.row_overlaps_any([c1]):
                 pair_residual = c1.residual + c2.residual
                 if pair_residual < preferred_res:
                     # NOTE: values that appear to be equal can pass the above test due to floating
                     #   point rounding errors.  While not ideal, it doesn't invalidate the logic.
-                    if not ( trace_overlap(c1, unavailable_rows) or 
-                             trace_overlap(c2, unavailable_rows)
+                    if not ( c1.row_overlaps_any(unavailable_rows) or 
+                             c2.row_overlaps_any(unavailable_rows)
                            ):
                         # Select this candidate pair if no overlap with any incomplete row
                         # c1.log(frnum, prefix="Select1")
                         # c2.log(frnum, prefix="Select2")
                         preferred_res = pair_residual
                         preferred     = c1 if c1.traces.minfrbeg <= c2.traces.minfrbeg else c2
-                    elif preferred and trace_overlap(preferred, [c1,c2]):
+                    elif preferred and preferred.row_overlaps_any([c1,c2]):
                         # Deselect current preferred row as there may be a better one we cannot use yet
+                        # (leaving preferred_res untouched, so that a poorer match cannot be selected)
+                        preferred.log(frnum, prefix="Deselect")
+                        preferred     = None
+    return preferred
+
+def find_preferred_row_candidate(frnum, frsel, available_rows, open_rows):
+    """
+    Select a preferred row candidate from those available for consideration.
+
+    frnum           is the number of frame currently being processed
+    frsel           is the number of the last frame containing a selected row.
+                    Rows ending before this frame cannot be blocked from selection
+                    by subsequent open frames, as rows cannot cross over.
+    available_rows  is a list of row candidates from which a preferred candidate 
+                    selection may be made.
+    open_rows       is a list of row candidates which are potentially incomplete,
+                    so cannot yet be considered as a preferred candidate (but which
+                    may still affect what may be considered a preferred candidate)
+    """
+    #log_info(f"## find_preferred_row_candidate ## frnum {frnum:d}")
+    preferred_res = MAX_ROW_RESIDUAL*2
+    preferred     = None
+
+    # The following logic looks for a pair of non-overlapping row candidates, 
+    # the sum of whose residuals is less than the sum of all other candidate 
+    # pairs.  The first of these to appear is selected.
+    #
+    # This logic is an attempt to take account of additional, better candidate 
+    # rows that might otherwise be blocked by selecting the best single candidate.
+    #
+    for c1 in available_rows:
+        for c2 in available_rows:
+            if not c2.row_overlaps_any([c1]):
+                pair_residual = c1.residual + c2.residual
+                if pair_residual < preferred_res:
+                    # NOTE:
+                    #   values that appear to be equal can pass the above test due to floating
+                    #   point rounding errors.  While not ideal, it doesn't invalidate the logic.
+                    if not ( c1.row_overlaps_any(open_rows) or 
+                             c2.row_overlaps_any(open_rows)
+                           ):
+                        # Select this candidate pair if no overlap with any incomplete row
+                        # c1.log(frnum, prefix="Select1")
+                        # c2.log(frnum, prefix="Select2")
+                        preferred_res = pair_residual
+                        preferred     = c1 if c1.traces.minfrbeg <= c2.traces.minfrbeg else c2
+                    elif preferred and preferred.row_overlaps_any([c1,c2]):
+                        # Deselect current preferred row as there may be a better one we cannot use
+                        # yet (leaving preferred_res, so that a poorer match cannot be selected)
                         preferred.log(frnum, prefix="Deselect")
                         preferred     = None
     return preferred
@@ -2386,6 +2475,7 @@ def main():
 
     row_data_accum = row_data_accumulator()     # Data extracted from detected rows
     last_frame_num = 0
+    last_frame_sel = 0                          # Last frame with a selected row
 
     while True:
 
@@ -2448,12 +2538,25 @@ def main():
             # `filtered_region_coords_list` is a list of `region_frame_centroid` values
             new_traces, open_traces = region_trace_detect(frame_number, filtered_region_coords_list, open_traces)
 
+            # Row detection
+            #
             # When new traces are detected...
             new_rows = []
             if len(new_traces) > 0:
                 # Update buffer of traces waiting to be sorted into rows
                 closed_traces = region_trace_add(frame_number, new_traces, closed_traces)
                 closed_traces = remove_spurious_traces(frame_number, closed_traces)
+                # Build an initial set of row candidates
+                row_candidates = find_initial_row_candidates(frame_number, closed_traces, sprocket_range)
+                # for c in row_candidates:
+                #     c.log(frame_number, prefix=f"Initial candidate")
+                # Add extra traces to row candidates
+                row_candidates = find_extended_row_candidates(frame_number, row_candidates, closed_traces)
+                # Select strongest candidate
+                available_rows, open_rows = (
+                    find_available_open_row_candidates(frame_number, row_candidates)
+                    )
+                # Loop looking for row candidates to confirm
                 while (True):
                     log_info(f"## Assemble and test candidates ## frame_number {frame_number:d}, num traces {len(closed_traces):d}")
                     # for t in closed_traces:
@@ -2461,24 +2564,27 @@ def main():
 
                     # Adding just one new row for each pass through this loop ensures that
                     # no trace is assigned to more than one row/
-                    #
-                    # Build an initial set of row candidates
-                    row_candidates = find_initial_row_candidates(frame_number, closed_traces, sprocket_range)
-                    # for c in row_candidates:
-                    #     c.log(frame_number, prefix=f"Initial candidate")
-                    # Add extra traces to row candidates
-                    row_candidates = find_extended_row_candidates(frame_number, row_candidates, closed_traces)
-                    # Select strongest candidate
-                    row_candidate = find_preferred_row_candidate(frame_number, row_candidates)
-                    if row_candidate == None:
+                    select_row = find_preferred_row_candidate(frame_number, last_frame_sel, available_rows, open_rows)
+                    if select_row == None:
                         break   # No more for now
-                    # Use preferred candidate and remove traces from unallocated traces
-                    log_info(f"Preferred: residual {row_candidate.residual:6.3f}")
-                    log_info(row_candidate.long_str(prefix="  ", t_prefix="    "))
-                    new_rows.append(row_candidate)
-                    for t in row_candidate:
+                    # Use selected candidate and remove traces from unallocated traces
+                    if select_row.traces.minfrbeg > last_frame_sel:
+                        last_frame_sel = select_row.traces.minfrbeg
+                    log_info(f"Preferred: residual {select_row.residual:6.3f}")
+                    log_info(select_row.long_str(prefix="  ", t_prefix="    "))
+                    new_rows.append(select_row)
+                    for t in select_row:
                         closed_traces.remove(t)
                         used_traces.append(t)
+                    # Eliminate overlaps from available_rows
+                    available_rows = [r for r in available_rows if not r.row_overlaps_any([select_row])]
+
+
+                    # @@@@ add logic to also add the best non-overlapping closed rows that precede
+                    #      the preferred row.  These rows are sometimes currently blocked by better 
+                    #      options that come later.
+                    # @@@@
+
 
             # Show closed region traces
             # log_region_traces(frame_number, new_traces)

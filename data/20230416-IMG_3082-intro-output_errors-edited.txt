@@ -1,0 +1,54 @@
+6540-6563 -- missed empty row
+
+------- Frame number   7047 -------
+WARNING row_data: set_data(3,True) twice  OK
+
+------- Frame number   8225 -------
+8209 -- hole (3) not detected
+WARNING row_data: set_data(0,True) twice NOT OK: see above
+
+10704-10740 -- missed two empty rows
+
+12298-12319 --missed empty row
+
+------- Frame number  13775 -------
+WARNING Detected hole out of range: y1   0.0036, d1  -0.0435, n60 -3, n30 -1   OK
+WARNING ymin_track   142.63, ymax_track   1707.65
+WARNING y:   151.00, y1:   0.0036, range: (  145.41.. 1712.12: 1566.71)
+
+?-14137 -- missed empty row
++ ANO before 14193
+
+------- Frame number  15593 -------
+WARNING ymin sprocket deviation: yminr   498.63, ymint   139.72, ymindev   358.91, ytrdev_max     8.00   OK (sprocket hole not matched with row)
+
+- before 15675 -- missed empty row
+
+- before 16125 -- missed empty row, twice
+
+------- Frame number  17801 -------
+
+WARNING ymax sprocket deviation: ymaxr   970.20, ymaxt  1711.32, ymaxdev   741.12, ytrdev_max     8.00  OK (sprocket hole not matched with row)
+
+------- Frame number  18686 -------
+WARNING row_data: set_data(7,True) twice  OK
+
+------- Frame number  18872 -------
+WARNING row_data: set_data(8,True) twice  OK
+
+------- Frame number  18903 -------
+WARNING row_data: set_data(24,True) twice OK
+
+
+- before 19946 -- missed empty row
+
+- before 20036 -- missed empty row (4 times)
+
+- before 20105 -- missed empty rows
+
+- before 20363 -- missed empty row
+
+- and more towards end
+
+
+
