@@ -13,11 +13,19 @@ TODO.md
       so that more nearly orthogonal sets are preferred?
 
 
-## 2022-06-19: video-09-row-data-decode.py  @@TODO
+## 2022-06-19: video-09-row-data-decode.py  
+
+@@TODO current at 2023-06-04
+
+[ ] Output column codes in decoder output (see photo of Monotype decoder ruler)
+
+[ ] Configure default IP address, or way to read it on boot, for stepper motor control on new networks
+
+[ ] Make recordings of actual diary tapes/spools
 
 [ ] Using matrix array configuration, extract character data from decoded data
 
-[ ] Set up definition for Bulmer matrix array
+[ ] Set up definition for Bulmer matrix array (see photo)
 
 [ ] Look into word separation
 
@@ -27,7 +35,9 @@ TODO.md
 
 [ ] Blog post and telling the MC story...
 
-[ ] Redesign reader device to be more uniform with less wobble
+[x] Redesign reader device to be more uniform with less wobble
+
+
 
 
 ## 2022-05-03: video-08-row-data-extract.py
