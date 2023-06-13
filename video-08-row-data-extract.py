@@ -82,13 +82,12 @@ PAUSE_ON_MULTIPLE   = True          # Pause on multiple detection of column posi
 
 # To assist with debugging...
 
-START_FRAME  = 10500        # First frame to process, or zero to start at beginning of video
-START_FRAME  = 0      # First frame to process, or zero to start at beginning of video
-STOP_FRAME   = 1000        # Final frame to process, or zero to stop at end of video
+START_FRAME  = 0        # First frame to process, or zero to start at beginning of video
+STOP_FRAME   = 0        # Final frame to process, or zero to stop at end of video
 PAUSE_FROM   = 1        # Don't pause until here.  Set to zero for normal pause/breakpoints.
-PAUSE_UNTIL  = 11000        # Don't pause after here.  Set to zero for normal pause/breakpoints.
+PAUSE_UNTIL  = 1        # Don't pause after here.  Set to zero for normal pause/breakpoints.
 
-PAUSE_FRAMES = (200,
+PAUSE_FRAMES = ( #200,
     10630, 10650,
     10680, 10692, 10696,
     10700,
@@ -97,6 +96,32 @@ PAUSE_FRAMES = (200,
 
 LOG_REGION_TRACE_START  = 0
 LOG_REGION_TRACE_END    = 0
+
+# ========================================
+# Visualization colours
+# ========================================
+
+def Colour_val(R=0, G=0, B=0):
+    # Return colour value in format used by OpenCV video construction functions
+    #
+    # NOTE OpenCV colour channels are B,G,R
+    #
+    # Maybe will later add options for alternate colour spaces
+    #
+    return (B,G,R)
+
+
+
+COLOUR_BRIGHT   =  Colour_val(R=255, G=0, B=0)
+
+COLOUR_CENTROID = Colour_val(R=255, G=0, B=0)
+
+
+
+
+# ========================================
+# Monotype tape mapping data
+# ========================================
 
 # No hole for 'O' and 15
 Tape_column_labels = (
@@ -131,40 +156,6 @@ Tape_column_labels = (
     , '13'          # 28
     , '14'          # 29
     , '0005'        # 30
-    ])
-
-Tape_column_labels_rev = (
-    [ '0005'        #  0
-    , 14            #  1
-    , 13            #  2
-    , 12            #  3
-    , 11            #  4
-    , 10            #  5
-    ,  9            #  6
-    ,  8            #  7
-    ,  7            #  8
-    ,  6            #  9
-    ,  5            # 10
-    ,  4            # 11
-    ,  3            # 12
-    ,  2            # 13
-    ,  1            # 14
-    , 'A'           # 15
-    , 'B'           # 16
-    , 'C'           # 17
-    , '0075'        # 18 / 12
-    , 'D'           # 19
-    , 'E'           # 20
-    , 'S'           # 21 / 9    # Not a character row/col
-    , 'F'           # 22
-    , 'G'           # 23
-    , 'H'           # 24
-    , 'I'           # 25
-    , 'J'           # 26
-    , 'K'           # 27
-    , 'L'           # 28
-    , 'M'           # 29
-    , 'N'           # 30
     ])
 
 Various_841_matrix = (
@@ -298,7 +289,7 @@ Bulmer_469_matrix = (
     , '_l':     ['1', 'K']
     , '_j':     ['1', 'L']
     , '/':      ['1', 'M']
-    , ';':      ['1', 'N']
+    , '’':      ['1', 'N']          # Unicode 0x2019 - https://graphicdesign.stackexchange.com/a/66834
     , '??':     ['1', 'O']          # 'O' = no column hole?
     , '1':      ['2', 'N', 'I']      # 6wide
     , '2':      ['2', 'N', 'L']
@@ -324,9 +315,9 @@ Bulmer_469_matrix = (
     , ':':      ['3', 'C']
     , ';':      ['3', 'D']
     , 'I':      ['3', 'E']
-    , '_s':     ['3', 'F']
-    , '_r':     ['3', 'G']
-    , '_z':     ['3', 'H']
+    , 's':      ['3', 'F']
+    , 'r':      ['3', 'G']
+    , 'z':      ['3', 'H']
     , '_e':     ['3', 'I']
     , '_c':     ['3', 'J']
     , '_y':     ['3', 'K']
@@ -343,7 +334,7 @@ Bulmer_469_matrix = (
     , 'c':      ['4', 'E']
     , 'a':      ['4', 'F']
     , 'e':      ['4', 'G']
-    , 'r':      ['4', 'H']
+    , '_r':     ['4', 'H']
     , '_b':     ['4', 'I']
     , '_v':     ['4', 'J']
     , '_k':     ['4', 'K']
@@ -398,7 +389,7 @@ Bulmer_469_matrix = (
     , '✝︎/':     ['7', 'I']
     , '_a':     ['7', 'J']
     , '_£':     ['7', 'K']
-    , 'nm':     ['7', 'L']          (naut mile?)
+    , 'nm':     ['7', 'L']          # (naut mile?)
     , '_8':     ['7', 'M']
     , '_5':     ['7', 'N']
     , '_2':     ['7', 'O']
@@ -2070,6 +2061,13 @@ class row_data(object):
     def hole_labels(self):
         return [Tape_column_labels[i] for i in range(0, 31) if self.data[i]]
 
+    def encoded_character(self, matrix):
+        hls = set(self.hole_labels())
+        for c,cl in matrix.items():
+            if set(cl) == hls:
+                return c
+        return ""
+
     def log(self, frnow, logmethod=print, prefix="row_data"):
         logmethod(f"{prefix}: frnow: {frnow:d}, {self.long_str(prefix='')}")
         return
@@ -2940,19 +2938,19 @@ def main():
         keyboard = cv.waitKey(20)
         if keyboard != -1: 
         	log_debug(keyboard)
-        if keyboard == ord('p'):
+        if keyboard in {ord('p'), ord('P')}:
             # Pause
             paused = True
             step   = False
-        if keyboard == ord('r'):
+        if keyboard in {ord('r'), ord('R')}:
             # Resume
             paused = False
             step   = False
-        if keyboard == ord('s'):
+        if keyboard in {ord('s'), ord('S')}:
             # Single-step frame
             step   = True
             paused = False
-        if keyboard == ord('q') or keyboard == 27:
+        if keyboard in {ord('q'), ord('Q'), 27}:
             # Quit
             break
 
@@ -2966,7 +2964,10 @@ def main():
         rd_prev = None
         comma   = ","
         for i, rd in enumerate(row_data_accum.row_data):
-            dataout.write(f"row {i:>4d}: frame {rd.frnum:>5d}, data {str(rd)}  ({(comma.join(rd.hole_labels())):s})\n")
+            dataout.write(
+                f"row {i:>4d}: frame {rd.frnum:>5d}, data {str(rd)}  "+
+                f"({(comma.join(rd.hole_labels())):10s})  "+
+                f"{rd.encoded_character(Bulmer_469_matrix):s}\n")
             if rd_prev and (rd.frnum < rd_prev.frnum):
                 break_warning("Row {i:>4d} at frame {rd.frnum:6d} follows row at frame {rd_prev.frnum:6d}")
             rd_prev = rd
