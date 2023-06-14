@@ -9,6 +9,7 @@ cvenv
 *.m4v
 output*
 *-output.*
+*-output_*.*
 *-output_errors.*
 
 # Packages

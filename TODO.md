@@ -17,15 +17,15 @@ TODO.md
 
 @@TODO current at 2023-06-04
 
-[ ] Output column codes in decoder output (see photo of Monotype decoder ruler)
+[x] Output column codes in decoder output (see photo of Monotype decoder ruler)
 
 [ ] Configure default IP address, or way to read it on boot, for stepper motor control on new networks
 
 [ ] Make recordings of actual diary tapes/spools
 
-[ ] Using matrix array configuration, extract character data from decoded data
+[x] Using matrix array configuration, extract character data from decoded data
 
-[ ] Set up definition for Bulmer matrix array (see photo)
+[x] Set up definition for Bulmer matrix array (see photo)
 
 [ ] Look into word separation
 

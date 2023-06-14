@@ -105,18 +105,58 @@ def Colour_val(R=0, G=0, B=0):
     # Return colour value in format used by OpenCV video construction functions
     #
     # NOTE OpenCV colour channels are B,G,R
+    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
+    #
+    # Supplied RGB values are in range 0-100
     #
     # Maybe will later add options for alternate colour spaces
     #
-    return (B,G,R)
+    return (int(B*255/100),int(G*255/100),int(R*255/100))
 
+# Original colours
+COLOUR_BLACK            = Colour_val(R=0,   G=0,   B=0)     # Black pixel
+COLOUR_MARKER           = Colour_val(R=100, G=100, B=100)   # Bright pixels (white)
+COLOUR_CENTROID         = Colour_val(R=100, G=0,   B=0)     # Region centroid (red)
+COLOUR_FREE_TRACE       = Colour_val(R=0,   G=100, B=0)     # Trace not allocated to row (green)
 
+COLOUR_NEW_BORDER       = Colour_val(R=80,  G=100, B=80)    # Light green (Unused?)
+COLOUR_NEW1_ROW_FILL    = Colour_val(R=100, G=100, B=40)    # Odd rows: Light yellow
+COLOUR_NEW1_ROW_TRACE   = Colour_val(R=100, G=0,   B=0)     # Odd rows: Red
+COLOUR_NEW2_ROW_FILL    = Colour_val(R=40,  G=100, B=100)   # Even rows: Light blue
+COLOUR_NEW2_ROW_TRACE   = Colour_val(R=0,   G=0,   B=100)   # Even rows: Blue
 
-COLOUR_BRIGHT   =  Colour_val(R=255, G=0, B=0)
+COLOUR_OLD_BORDER       = Colour_val(R=0,   G=40,  B=0)     # Dark green (Unused?)
+COLOUR_OLD1_ROW_FILL    = Colour_val(R=40,  G=40,  B=0)     # Dark yellow/green
+COLOUR_OLD1_ROW_TRACE   = Colour_val(R=0,   G=100, B=100)   # Bright yellow
+COLOUR_OLD2_ROW_FILL    = Colour_val(R=0,   G=40,  B=40)    # Dark blue/green
+COLOUR_OLD2_ROW_TRACE   = Colour_val(R=0,   G=100, B=100)   # Bright blue
 
-COLOUR_CENTROID = Colour_val(R=255, G=0, B=0)
+COLOUR_SPROCKET         = Colour_val(R=100, G=50,  B=0)     # Orange
+COLOUR_HOLE             = Colour_val(R=100, G=50,  B=0)     # Orange
+COLOUR_HOLE_POS         = Colour_val(R=37,  G=50,  B=0)     # Dull green
+COLOUR_HOLE_LABELS      = Colour_val(R=80,  G=80,  B=80)    # Light grey
 
+# Colours linked to Clarice's diary
+COLOUR_MARKER           = Colour_val(R=90,  G=88,  B=76)    # Bright pixels (white)
+COLOUR_CENTROID         = Colour_val(R=80,  G=17,  B=19)    # Region centroid (red)
+COLOUR_FREE_TRACE       = Colour_val(R=90,  G=20,  B=20)    # Trace not allocated to row (green)
 
+COLOUR_NEW_BORDER       = Colour_val(R=60,  G=96,  B=57)    # Light green (Unused?)
+COLOUR_NEW1_ROW_FILL    = Colour_val(R=6,   G=65,  B=5)     # Odd rows: Neutral green
+COLOUR_NEW1_ROW_TRACE   = Colour_val(R=60,  G=96,  B=57)    # Odd rows: Bright green
+COLOUR_NEW2_ROW_FILL    = Colour_val(R=6,   G=65,  B=52)    # Even rows: Neutral green
+COLOUR_NEW2_ROW_TRACE   = Colour_val(R=60,  G=96,  B=57)    # Even rows: Bright green
+
+COLOUR_OLD_BORDER       = Colour_val(R=100, G=100, B=100)   # White (Unused?)
+COLOUR_OLD1_ROW_FILL    = Colour_val(R=25,  G=36,  B=45)    # Dull blue
+COLOUR_OLD1_ROW_TRACE   = Colour_val(R=45,  G=67,  B=87)    # Medium/bright blue
+COLOUR_OLD2_ROW_FILL    = Colour_val(R=33,  G=47,  B=33)    # Dull green
+COLOUR_OLD2_ROW_TRACE   = Colour_val(R=55,  G=80,  B=55)    # Medium/bright green
+
+COLOUR_SPROCKET         = Colour_val(R=97,  G=47,  B=14)    # Orange
+COLOUR_HOLE             = Colour_val(R=97,  G=47,  B=14)    # Orange
+COLOUR_HOLE_POS         = Colour_val(R=50,  G=50,  B=33)    # Dull olive
+COLOUR_HOLE_LABELS      = Colour_val(R=60,  G=60,  B=40)    # Light grey
 
 
 # ========================================
@@ -290,8 +330,8 @@ Bulmer_469_matrix = (
     , '_j':     ['1', 'L']
     , '/':      ['1', 'M']
     , '’':      ['1', 'N']          # Unicode 0x2019 - https://graphicdesign.stackexchange.com/a/66834
-    , '??':     ['1', 'O']          # 'O' = no column hole?
-    , '1':      ['2', 'N', 'I']      # 6wide
+    , '??':     ['1']               # no column hole?
+    , '1':      ['2', 'N', 'I']     # 6wide
     , '2':      ['2', 'N', 'L']
     , '3':      ['2', 'A']
     , '[':      ['2', 'B']
@@ -307,7 +347,7 @@ Bulmer_469_matrix = (
     , '4':      ['2', 'L']
     , '5':      ['2', 'M']
     , '6':      ['2', 'N']
-    , 'I/9':    ['2', 'O']
+    , 'I/9':    ['2']
     , '7':      ['3', 'N', 'I']      # 7wide
     , 'J':      ['3', 'N', 'L']
     , 'S':      ['3', 'A']
@@ -324,7 +364,7 @@ Bulmer_469_matrix = (
     , '_z':     ['3', 'L']
     , '_I':     ['3', 'M']
     , '_:':     ['3', 'N']
-    , '8':      ['3', 'O']
+    , '8':      ['3']
     , '--':     ['4', 'N', 'I']      # 8wide
     , '.Z':     ['4', 'N', 'L']
     , '.F':     ['4', 'A']
@@ -341,7 +381,7 @@ Bulmer_469_matrix = (
     , '_o':     ['4', 'L']
     , '_;':     ['4', 'M']
     , '_!':     ['4', 'N']
-    , '--':     ['4', 'O']
+    , '--':     ['4']
     , '.C':     ['5', 'N', 'I']      # 9wide
     , '.R':     ['5', 'N', 'L']
     , '.T':     ['5', 'A']
@@ -358,7 +398,7 @@ Bulmer_469_matrix = (
     , '_?':     ['5', 'L']
     , '_9':     ['5', 'M']
     , '_6':     ['5', 'N']
-    , '_3':     ['5', 'O']
+    , '_3':     ['5']
     , '.B':     ['6', 'N', 'I']      # 9wide
     , '.Y':     ['6', 'N', 'L']
     , '$':      ['6', 'A']
@@ -375,7 +415,7 @@ Bulmer_469_matrix = (
     , '_0':     ['6', 'L']
     , '_1':     ['6', 'M']
     , '_4':     ['6', 'N']
-    , '_7':     ['6', 'O']
+    , '_7':     ['6']
     , '.V':     ['7', 'N', 'I']      # 9wide
     , '.E':     ['7', 'N', 'L']
     , '.A':     ['7', 'A']
@@ -392,7 +432,7 @@ Bulmer_469_matrix = (
     , 'nm':     ['7', 'L']          # (naut mile?)
     , '_8':     ['7', 'M']
     , '_5':     ['7', 'N']
-    , '_2':     ['7', 'O']
+    , '_2':     ['7']
     , '--':     ['8', 'N', 'I']      # 10wide
     , '--':     ['8', 'N', 'L']
     , '.X':     ['8', 'A']
@@ -409,7 +449,7 @@ Bulmer_469_matrix = (
     , '_fi':    ['8', 'L']
     , '_J':     ['8', 'M']
     , '*':      ['8', 'N']
-    , '†':      ['8', 'O']
+    , '†':      ['8']
     , '--':     ['9', 'N', 'I']      # 10wide
     , '--':     ['9', 'N', 'L']
     , '.Q':     ['9', 'A']
@@ -426,7 +466,7 @@ Bulmer_469_matrix = (
     , ' ':      ['9', 'L']
     , '_S':     ['9', 'M']
     , '‡':      ['9', 'N']
-    , '--':     ['9', 'O']
+    , '--':     ['9']
     , '--':     ['10', 'N', 'I']      # 11wide
     , '--':     ['10', 'N', 'L']
     , '--':     ['10', 'A']
@@ -443,7 +483,7 @@ Bulmer_469_matrix = (
     , '--':     ['10', 'L']
     , '--':     ['10', 'M']
     , '--':     ['10', 'N']
-    , '--':     ['10', 'O']
+    , '--':     ['10']
     , '--':     ['11', 'N', 'I']      # 12wide
     , '.M':     ['11', 'N', 'L']
     , 'B':      ['11', 'A']
@@ -460,7 +500,7 @@ Bulmer_469_matrix = (
     , '_V':     ['11', 'L']
     , '_K':     ['11', 'M']
     , '_X':     ['11', 'N']
-    , '--':     ['11', 'O']
+    , '--':     ['11']
     , '.AE':    ['12', 'N', 'I']      # 13wide
     , 'X':      ['12', 'N', 'L']
     , 'Y':      ['12', 'A']
@@ -477,7 +517,7 @@ Bulmer_469_matrix = (
     , '_G':     ['12', 'L']
     , '_Y':     ['12', 'M']
     , '_D':     ['12', 'N']
-    , '_Q':     ['12', 'O']
+    , '_Q':     ['12']
     , '.OE':    ['13', 'N', 'I']      # 14wide
     , '.W':     ['13', 'N', 'L']
     , 'Q':      ['13', 'A']
@@ -494,13 +534,13 @@ Bulmer_469_matrix = (
     , 'ffl':    ['13', 'L']
     , '_m':     ['13', 'M']
     , '_ffi':   ['13', 'N']
-    , '_ffl':   ['13', 'O']
+    , '_ffl':   ['13']
     , '--':     ['14', 'N', 'I']      # 15wide
     , '--':     ['14', 'N', 'L']
     , '--':     ['14', 'A']
     , '--':     ['14', 'B']
     , '--':     ['14', 'C']
-    , '–':      ['14', 'D']      # em dash
+    , '–':      ['14', 'D']     # em dash
     , '&':      ['14', 'E']
     , 'H':      ['14', 'F']
     , 'M':      ['14', 'G']
@@ -511,24 +551,24 @@ Bulmer_469_matrix = (
     , '--':     ['14', 'L']
     , '--':     ['14', 'M']
     , '--':     ['14', 'N']
-    , 'gy':     ['14', 'O']     # ??
-    , '--':     ['15', 'N', 'I']      # 18wide  (no row hole?)
-    , '--':     ['15', 'N', 'L']
-    , '✦':      ['15', 'A']          # 4-point star
-    , 'AE':     ['15', 'B']
-    , '--':     ['15', 'C']
-    , 'OE':     ['15', 'D']
-    , '✖':      ['15', 'E']
-    , 'W':      ['15', 'F']
-    , '%':      ['15', 'G']
-    , '_W':     ['15', 'H']
-    , '+':      ['15', 'I']
-    , '_OE':    ['15', 'J']
-    , '--':     ['15', 'K']
-    , '_AE':    ['15', 'L']
-    , '..':     ['15', 'M']
-    , '⌿':      ['15', 'N']    # crossed out em dash?
-    , '__':     ['15', 'O']    # No character
+    , 'gy':     ['14']          # ??
+    , '--':     ['N', 'I']      # 18wide  (no row hole)
+    , '--':     ['N', 'L']
+    , '✦':      ['A']           # 4-point star
+    , 'AE':     ['B']
+    , '--':     ['C']
+    , 'OE':     ['D']
+    , '✖':      ['E']
+    , 'W':      ['F']
+    , '%':      ['G']
+    , '_W':     ['H']
+    , '+':      ['I']
+    , '_OE':    ['J']
+    , '--':     ['K']
+    , '_AE':    ['L']
+    , '..':     ['M']
+    , '⌿':      ['N']           # crossed out em dash?
+    , '__':     []              # No character
    })
 
 
@@ -742,7 +782,8 @@ def show_video_frame(frame_label, frame_number, frame_data):
 
 def show_video_frame_mask(frame_label, frame_number, frame_data):
     # Display mask frame, and return displayed value
-    frame_show   = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    #@@@@ frame_show   = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    frame_show = map_markers_to_colour(frame_data, COLOUR_MARKER)
     return show_video_frame(frame_label, frame_number, frame_show)
 
 def draw_region_centroids(frame_show, centroid_data):
@@ -752,7 +793,8 @@ def draw_region_centroids(frame_show, centroid_data):
 
 def show_video_frame_mask_centroids(frame_label, frame_number, frame_data, centroid_data):
     # Display mask frame with centroid data, and return displayed frame value
-    frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    #@@@@ frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    frame_show = map_markers_to_colour(frame_data, COLOUR_MARKER)
     draw_region_centroids(frame_show, centroid_data)
     return show_video_frame(frame_label, frame_number, frame_show)
 
@@ -949,14 +991,10 @@ class region_frame_centroid(object):
         """
         Draw centroid in supplied video frame buffer
         """
-        # @@@@ accept colour as parameter
-        # NOTE colour channels are B,G,R:
-        # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-        colour_red = (0, 0, 255)
         cx = round(self.xcen)
         cy = round(self.ycen)
         cr = math.ceil( math.sqrt(self.area) )
-        cv.circle(frame, (cx,cy), cr, colour_red, thickness=2)
+        cv.circle(frame, (cx,cy), cr, COLOUR_CENTROID, thickness=2)
         return
 
     def __str__(self, prefix=""):
@@ -1360,14 +1398,24 @@ def region_trace_add(frnum, ending_traces, closed_traces):
     closed_traces.extend(ending_traces)
     return closed_traces
 
-def draw_region_traces(frame_show, frnum, traces, colour=None):
-    # NOTE colour channels are B,G,R:
-    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_green = (0, 255, 0)
-    colour       = colour or colour_green
+def draw_region_traces(frame_show, frnum, traces, colour):
     for rt in traces:
         rt.draw(frame_show, frnum, colour)
     return
+
+def map_markers_to_colour(frame_grey, colour_marker):
+    """
+    Map bright regions in greyscale image to the supplied colout value.
+
+    Based on code at https://stackoverflow.com/a/67785421
+    See also: https://docs.opencv.org/3.4/d2/de8/group__core__array.html#gab55b8d062b7f5587720ede032d34156f
+    """
+    # Construct colour-mapping look-up table
+    colourmap = np.zeros((256, 1, 3), dtype=np.uint8)
+    colourmap[:,0] = np.array([ (COLOUR_BLACK if i <= 128 else colour_marker) for i in range(0,256) ]).astype(np.uint8)
+    # Create colour frame data and return apply lookup
+    frame_colour = cv.cvtColor(frame_grey, cv.COLOR_GRAY2RGB)
+    return cv.LUT(frame_colour, colourmap)
 
 # show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces)
 #
@@ -1381,9 +1429,10 @@ def draw_region_traces(frame_show, frnum, traces, colour=None):
 #
 def show_video_frame_mask_region_traces(frame_label, frame_number, frame_data, rcoords, rtraces):
     # Display mask frame with centroid data, and return displayed frame value
-    frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    #@@@@ frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    frame_show = map_markers_to_colour(frame_data, COLOUR_MARKER)
     draw_region_centroids(frame_show, rcoords)
-    draw_region_traces(frame_show, frame_number, rtraces)
+    draw_region_traces(frame_show, frame_number, rtraces, COLOUR_FREE_TRACE)
     return show_video_frame(frame_label, frame_number, frame_show)
 
 # Log list of region traces to console
@@ -2437,7 +2486,9 @@ class row_data_accumulator(object):
                 ypos = self.ymin_track + y1*(self.ymax_track-self.ymin_track)
                 cx, cy = map_frame_pos(frnow, frnow, xpos, ypos)
                 # log_info(f"draw_row_labels: {i}, {(cx, cy)}, {colour}")
-                cv.putText(frame_show, str(i), (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.6 , colour)
+                # cv.putText(frame_show, str(i), (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.6 , colour)
+                label = f"{i:2d}  {Tape_column_labels[i]:s}"
+                cv.putText(frame_show, label, (cx+50, cy+5), cv.FONT_HERSHEY_SIMPLEX, 0.6 , colour)
         return
 
 
@@ -2660,25 +2711,21 @@ def draw_rows(
     return
 
 def draw_new_rows(frame_show, frnum, rows):
-    # NOTE colour channels are B,G,R:
-    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_border = (204, 255, 204)     # Light green
-    colour_new1   = (102, 255, 255)     # Light yellow
-    colour_new2   = (255, 255, 102)     # Light blue
-    colour_trace1 = (  0,   0, 255)     # Red  (Outline traces in odd new rows)
-    colour_trace2 = (255,   0,   0)     # Blue (Outline traces in even new rows)
+    colour_border = COLOUR_NEW_BORDER
+    colour_new1   = COLOUR_NEW1_ROW_FILL
+    colour_new2   = COLOUR_NEW2_ROW_FILL
+    colour_trace1 = COLOUR_NEW1_ROW_TRACE
+    colour_trace2 = COLOUR_NEW2_ROW_TRACE
     draw_rows(
         frame_show, frnum, rows, colour_border, colour_new1, colour_new2, colour_trace1, colour_trace2)
     return
 
 def draw_old_rows(frame_show, frnum, rows):
-    # NOTE colour channels are B,G,R:
-    # see https://docs.opencv.org/4.5.3/d8/d01/group__imgproc__color__conversions.html#ga397ae87e1288a81d2363b61574eb8cab
-    colour_border = (  0, 102,   0)     # Green
-    colour_old1   = (102, 102,   0)     # Yellow/green colour old rows (odd)
-    colour_old2   = (  0, 102, 102)     # Blue/green   colour old rows (even)
-    colour_trace1 = (255, 255,   0)     # Outline traces in odd rows
-    colour_trace2 = (  0, 255, 255)     # Outline traces in even rows
+    colour_border = COLOUR_OLD_BORDER
+    colour_old1   = COLOUR_OLD1_ROW_FILL
+    colour_old2   = COLOUR_OLD2_ROW_FILL
+    colour_trace1 = COLOUR_OLD1_ROW_TRACE
+    colour_trace2 = COLOUR_OLD2_ROW_TRACE
     draw_rows(frame_show, frnum, rows, colour_border, colour_old1, colour_old2, colour_trace1, colour_trace2)
     return
 
@@ -2701,24 +2748,18 @@ def draw_video_frame_mask_region_traces_rows(
         frame_number, frame_data, rcoords, unused_traces, row_traces, new_rows, old_rows
     ):
     # Display mask frame with centroid data, and return displayed frame value
-    frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    #@@@@ frame_show = cv.cvtColor(frame_data, cv.COLOR_GRAY2RGB)
+    frame_show = map_markers_to_colour(frame_data, COLOUR_MARKER)
     draw_region_centroids(frame_show, rcoords)
     draw_old_rows(frame_show, frame_number, old_rows)
     draw_new_rows(frame_show, frame_number, new_rows)
-    colour_green  = (0, 255, 0)
-    colour_yellow = (0, 255, 255)
-    draw_region_traces(frame_show, frame_number, unused_traces, colour_green)
-    # draw_region_traces(frame_show, frame_number, row_traces, colour_yellow)
+    draw_region_traces(frame_show, frame_number, unused_traces, COLOUR_FREE_TRACE)
     return frame_show
 
 def draw_row_data(frame_show, frame_number, row_data_accum):
-    colour_sprocket   = (0, 128, 255)       # Orange - colour for sprocket holes
-    colour_holes      = (0, 128, 255)       # Orange - colour for data
-    colour_fills      = (0, 128,  96)       # Dull green - colour for hole position with no data
-    colour_row_labels = (200, 200, 200)     # Light grey - colour for row labels
     for rd in row_data_accum.row_data:
-        rd.draw(frame_show, frame_number, colour_sprocket, colour_holes, colour_fills, row_data_accum)
-    row_data_accum.draw_row_labels(frame_show, frame_number, colour_row_labels)
+        rd.draw(frame_show, frame_number, COLOUR_SPROCKET, COLOUR_HOLE, COLOUR_HOLE_POS, row_data_accum)
+    row_data_accum.draw_row_labels(frame_show, frame_number, COLOUR_HOLE_LABELS)
     return frame_show
 
 
@@ -2791,11 +2832,6 @@ def main():
 
             # Display frame (copy)
             frame_show_orig = show_video_frame("Original video", frame_number, frame)
-
-            # @@@@ Extract foreground from background?
-            # outframe = cv.cvtColor(fgMask, cv.COLOR_GRAY2RGB)
-            # fgMask   = backSub.apply(frame)
-            # outframe = cv.copyTo(frame, mask=fgMask)
 
             # Convert to greyscale, detect highlights
             frame_grey       = convert_frame_to_greyscale(frame)
