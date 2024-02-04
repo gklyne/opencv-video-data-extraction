@@ -14,7 +14,11 @@
 #     --output=data/20230415-IMG_3071-colophon-output.avi
 
 # FILE_STEM="20230415-IMG_3071-colophon"
-FILE_STEM="20230416-IMG_3082-intro"
+# FILE_STEM="20230416-IMG_3082-intro"
+# FILE_STEM="20230924-VAD-spool-1-IMG_7192"
+# FILE_STEM="20240127-VAD-spool-in-time-of-war-IMG_7761"
+FILE_STEM="20240127-VAD-2-IMG_7762"
+
 FILE_DIR="."
 
 TIME_START=$(date)

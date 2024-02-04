@@ -24,6 +24,7 @@ default_output_file_name = "'default-output.avi'"
 
 MARKER_THRESHOLD    = 200           # Threshold for marker (hole) pixel detection
                                     # See: select_highlight_regions
+MARKER_THRESHOLD    = 230           # Threshold for marker (hole) pixel detection
 
 # Region detection (see adjacent_pixel_region below)
 REGION_X_ADJACENT   = 5             # Max X-distance between adjacent pixels in a region
@@ -72,8 +73,8 @@ SPROCKET_TRACK_FILT = 8             # Max sprocket history weighting for filteri
     # is (very) approximately SPROCKET_TRACK_FILT+0.5
 SPROCKET_TRDEV_MAX  = 8             # Max detected sprocket deviation from tracked position
 
-ROW_TRACE_YMIN      = 100           # Row detect: disregard traces with Y less than this
-ROW_TRACE_YMAX      = 1900          # Row detect: disregard traces with Y greater than this
+ROW_TRACE_YMIN      = 80            # Row detect: disregard traces with Y less than this (top)
+ROW_TRACE_YMAX      = 1900          # Row detect: disregard traces with Y greater than this (bottom)
 
 PAUSE_ON_TRDEV      = True          # Pause on tracking deviation exceeded
 PAUSE_ON_BETWEEN    = True          # Pause on trace between columns   
@@ -83,7 +84,7 @@ PAUSE_ON_MULTIPLE   = True          # Pause on multiple detection of column posi
 # To assist with debugging...
 
 START_FRAME  = 0        # First frame to process, or zero to start at beginning of video
-STOP_FRAME   = 0        # Final frame to process, or zero to stop at end of video
+STOP_FRAME   = 16000    # Final frame to process, or zero to stop at end of video
 PAUSE_FROM   = 1        # Don't pause until here.  Set to zero for normal pause/breakpoints.
 PAUSE_UNTIL  = 1        # Don't pause after here.  Set to zero for normal pause/breakpoints.
 
@@ -163,7 +164,8 @@ COLOUR_HOLE_LABELS      = Colour_val(R=60,  G=60,  B=40)    # Light grey
 # Monotype tape mapping data
 # ========================================
 
-# No hole for 'O' and 15
+# No hole for letter 'O' and 15
+# These are the rightmost column and bottom row respectively in the matrix case
 Tape_column_labels = (
     [ 'N'           #  0
     , 'M'           #  1
@@ -314,7 +316,7 @@ Caslon_14_matrix = (
    })
 
 Bulmer_469_matrix = (
-    { '^#':     ['1', 'N', 'I']     # 5wide
+    { 'I▿':     ['1', 'N', 'I']     # 5wide
     , '`':      ['1', 'N', 'L']
     , '´':      ['1', 'A']
     , ',':      ['1', 'B']
@@ -366,10 +368,10 @@ Bulmer_469_matrix = (
     , '_:':     ['3', 'N']
     , '8':      ['3']
     , '--':     ['4', 'N', 'I']      # 8wide
-    , '.Z':     ['4', 'N', 'L']
-    , '.F':     ['4', 'A']
-    , '.P':     ['4', 'B']
-    , '.L':     ['4', 'C']
+    , 'Z▿':     ['4', 'N', 'L']
+    , 'F▿':     ['4', 'A']
+    , 'P▿':     ['4', 'B']
+    , 'L▿':     ['4', 'C']
     , 'J':      ['4', 'D']
     , 'c':      ['4', 'E']
     , 'a':      ['4', 'F']
@@ -382,9 +384,9 @@ Bulmer_469_matrix = (
     , '_;':     ['4', 'M']
     , '_!':     ['4', 'N']
     , '--':     ['4']
-    , '.C':     ['5', 'N', 'I']      # 9wide
-    , '.R':     ['5', 'N', 'L']
-    , '.T':     ['5', 'A']
+    , 'C▿':     ['5', 'N', 'I']      # 9wide
+    , 'R▿':     ['5', 'N', 'L']
+    , 'T▿':     ['5', 'A']
     , '3':      ['5', 'B']
     , '6':      ['5', 'C']
     , '9':      ['5', 'D']
@@ -399,8 +401,8 @@ Bulmer_469_matrix = (
     , '_9':     ['5', 'M']
     , '_6':     ['5', 'N']
     , '_3':     ['5']
-    , '.B':     ['6', 'N', 'I']      # 9wide
-    , '.Y':     ['6', 'N', 'L']
+    , 'B▿':     ['6', 'N', 'I']      # 9wide
+    , 'Y▿':     ['6', 'N', 'L']
     , '$':      ['6', 'A']
     , '7':      ['6', 'B']
     , '4':      ['6', 'C']
@@ -416,9 +418,9 @@ Bulmer_469_matrix = (
     , '_1':     ['6', 'M']
     , '_4':     ['6', 'N']
     , '_7':     ['6']
-    , '.V':     ['7', 'N', 'I']      # 9wide
-    , '.E':     ['7', 'N', 'L']
-    , '.A':     ['7', 'A']
+    , 'V▿':     ['7', 'N', 'I']      # 9wide
+    , 'E▿':     ['7', 'N', 'L']
+    , 'A▿':     ['7', 'A']
     , '2':      ['7', 'B']
     , '5':      ['7', 'C']
     , '8':      ['7', 'D']
@@ -435,10 +437,10 @@ Bulmer_469_matrix = (
     , '_2':     ['7']
     , '--':     ['8', 'N', 'I']      # 10wide
     , '--':     ['8', 'N', 'L']
-    , '.X':     ['8', 'A']
-    , '.U':     ['8', 'B']
-    , '.D':     ['8', 'C']
-    , '.N':     ['8', 'D']
+    , 'X▿':     ['8', 'A']
+    , 'U▿':     ['8', 'B']
+    , 'D▿':     ['8', 'C']
+    , 'N▿':     ['8', 'D']
     , '?':      ['8', 'E']
     , 'p':      ['8', 'F']
     , 'n':      ['8', 'G']
@@ -452,10 +454,10 @@ Bulmer_469_matrix = (
     , '†':      ['8']
     , '--':     ['9', 'N', 'I']      # 10wide
     , '--':     ['9', 'N', 'L']
-    , '.Q':     ['9', 'A']
-    , '.K':     ['9', 'B']
-    , '.G':     ['9', 'C']
-    , '.O':     ['9', 'D']
+    , 'Q▿':     ['9', 'A']
+    , 'K▿':     ['9', 'B']
+    , 'G▿':     ['9', 'C']
+    , 'O▿':     ['9', 'D']
     , 'd':      ['9', 'E']
     , 'u':      ['9', 'F']
     , 'h':      ['9', 'G']
@@ -470,7 +472,7 @@ Bulmer_469_matrix = (
     , '--':     ['10', 'N', 'I']      # 11wide
     , '--':     ['10', 'N', 'L']
     , '--':     ['10', 'A']
-    , '.H':     ['10', 'B']
+    , 'H▿':     ['10', 'B']
     , 'Z':      ['10', 'C']
     , 'F':      ['10', 'D']
     , 'P':      ['10', 'E']
@@ -485,7 +487,7 @@ Bulmer_469_matrix = (
     , '--':     ['10', 'N']
     , '--':     ['10']
     , '--':     ['11', 'N', 'I']      # 12wide
-    , '.M':     ['11', 'N', 'L']
+    , 'M▿':     ['11', 'N', 'L']
     , 'B':      ['11', 'A']
     , 'L':      ['11', 'B']
     , 'E':      ['11', 'C']
@@ -501,7 +503,7 @@ Bulmer_469_matrix = (
     , '_K':     ['11', 'M']
     , '_X':     ['11', 'N']
     , '--':     ['11']
-    , '.AE':    ['12', 'N', 'I']      # 13wide
+    , 'AE▿':    ['12', 'N', 'I']      # 13wide
     , 'X':      ['12', 'N', 'L']
     , 'Y':      ['12', 'A']
     , 'V':      ['12', 'B']
@@ -518,8 +520,8 @@ Bulmer_469_matrix = (
     , '_Y':     ['12', 'M']
     , '_D':     ['12', 'N']
     , '_Q':     ['12']
-    , '.OE':    ['13', 'N', 'I']      # 14wide
-    , '.W':     ['13', 'N', 'L']
+    , 'OE▿':    ['13', 'N', 'I']      # 14wide
+    , 'W▿':     ['13', 'N', 'L']
     , 'Q':      ['13', 'A']
     , 'K':      ['13', 'B']
     , 'D':      ['13', 'C']
@@ -925,6 +927,7 @@ def find_frame_regions(frame_number, frame):
 
     #  Get coords of non-zero pixels
     pixel_coords  = np.column_stack(np.where(frame))
+                  # np.column_stack(np.asarray(frame).nonzero())
 
     # Merge non-zero pixels into regions.
     region_pixels_list = []              # [region_frame_pixels]
@@ -2115,6 +2118,8 @@ class row_data(object):
         for c,cl in matrix.items():
             if set(cl) == hls:
                 return c
+            if set(cl)|{'0075'} == hls:
+                return c+"+0075"
         return ""
 
     def log(self, frnow, logmethod=print, prefix="row_data"):
@@ -2288,18 +2293,32 @@ class row_data_accumulator(object):
         Method looks for a sufficiently large sample of consistent values to
         represent a reliable track of a sprocket hole position.
 
-        Returns consistent value for initial track, or None
+        sample  is a list of traces from  which a consistent value is to be extracted.
+
+        Returns consistent Y centroid value for initial track, or None
         """
         # log_info(f"init_sprocket_position: sample {sample}")
         while len(sample) >= SPROCKET_SAMPLE_MIN:
-            s_mean = statistics.fmean(sample)
-            s_dev  = statistics.stdev(sample, s_mean)
-            s_med  = statistics.median(sample)
-            log_info(f"init_sprocket_position: s_mean {s_mean:8.4f}, s_dev {s_dev:8.4f}, s_med {s_med:8.4f}, n: {len(sample):d}")
-            if s_dev <= SPROCKET_STDEV_MAX:
-                return s_mean
-            # Variance too large - remove outliers
-            sample = [ s for s in sample if abs(s-s_med) <= SPROCKET_STDEV_MAX ]
+            # Examine trace Y centroids
+            sy_sample = [t.ycen for t in sample]
+            sy_mean   = statistics.fmean(sy_sample)
+            sy_dev    = statistics.stdev(sy_sample, sy_mean)
+            sy_med    = statistics.median(sy_sample)
+            log_info(f"init_sprocket_position: sy_mean {sy_mean:8.4f}, sy_dev {sy_dev:8.4f}, sy_med {sy_med:8.4f}, n: {len(sample):d}")
+            # Examine trace frame lengths
+            fl_sample = [t.frlen for t in sample]
+            fl_mean   = statistics.fmean(fl_sample)
+            fl_dev    = statistics.stdev(fl_sample, fl_mean)
+            fl_med    = statistics.median(fl_sample)
+            log_info(f"init_sprocket_position: fl_mean {fl_mean:8.4f}, fl_dev {fl_dev:8.4f}, fl_med {fl_med:8.4f}, n: {len(sample):d}")
+            if (sy_dev <= SPROCKET_STDEV_MAX) and (fl_dev <= SPROCKET_STDEV_MAX):
+                return sy_mean
+            # Variance too large
+            # ... remove Y centroid outliers
+            sample = [ s for s in sample if abs(s.ycen-sy_med) <= SPROCKET_STDEV_MAX ]
+            # ... and frame length outliers
+            sample = [ s for s in sample if abs(s.frlen-fl_med) <= SPROCKET_STDEV_MAX ]
+            # ... and try again
         return None
 
     def init_sprocket_holes(self, row_detected):
@@ -2317,12 +2336,15 @@ class row_data_accumulator(object):
         returns:        initial estimates of sprocket hole Y-coordinate positions,
                         or None if an initial position has not been established.
         """
+        def key_trace_ycen(t):
+            # Use Y centroid of trace as key
+            return t.ycen
         traces  = row_detected.traces.rtraces
-        ycoords = [ t.ycen for t in traces ]
+        # ycoords = [ t.ycen for t in traces ]
         if not self.tracking:
-            ymin = min(ycoords)
-            ymax = max(ycoords)
-            self.track_data.append( (ymin, ymax) )
+            ymin_trace = min(traces, key=key_trace_ycen)
+            ymax_trace = max(traces, key=key_trace_ycen)
+            self.track_data.append( (ymin_trace, ymax_trace) )
             if self.ymin_track is None:
                 self.ymin_track = self.init_sprocket_position([ t[0] for t in self.track_data ])
             if self.ymax_track is None:
@@ -2997,17 +3019,12 @@ def main():
     parser.add_argument('--algo', type=str, help='Background subtraction method (KNN, MOG2).', default='MOG2')
     args = parser.parse_args()
 
-    # if args.algo == 'MOG2':
-    #     backSub = cv.createBackgroundSubtractorMOG2()
-    # else:
-    #     backSub = cv.createBackgroundSubtractorKNN()
-
     video_capture, frame_width, frame_height = open_video_input(
         cv.samples.findFileOrKeep(args.input)
         )
     if not video_capture:
         log_error('Unable to open: ' + args.input)
-        exit(0)
+        sys.exit(0)
     log_info("frame_height", frame_height, "frame_width", frame_width)
 
     video_writer = open_video_output(
