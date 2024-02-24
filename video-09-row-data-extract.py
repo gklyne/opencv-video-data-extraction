@@ -15,6 +15,8 @@ import itertools
 import sys
 import io
 
+from monotype_data import Tape_column_labels, Bulmer_469_matrix as monotype_matrix
+
 default_input_file_name  = "'default-input.avi'"
 default_output_file_name = "'default-output.avi'"
 
@@ -24,16 +26,18 @@ default_output_file_name = "'default-output.avi'"
 
 MARKER_THRESHOLD    = 200           # Threshold for marker (hole) pixel detection
                                     # See: select_highlight_regions
-MARKER_THRESHOLD    = 230           # Threshold for marker (hole) pixel detection
+MARKER_THRESHOLD    = 210           # Threshold for marker (hole) pixel detection
+
 
 # Region detection (see adjacent_pixel_region below)
 REGION_X_ADJACENT   = 5             # Max X-distance between adjacent pixels in a region
 REGION_Y_ADJACENT   = 3             # Max Y-distance between adjacent pixels in a region
-REGION_MIN_AREA     = 12            # Minimum area of region to be considered as marker/hole
-REGION_MAX_AREA     = 150           # Maximum area of region to be considered as marker/hole
+REGION_MIN_AREA     = 100           # Minimum area of region to be considered as marker/hole
+REGION_MAX_AREA     = 6000          # Maximum area of region to be considered as marker/hole
                                     # (NOT CURREENTRLY USED)
 
 FRAME_WIDTH_X       = 5             # X pixel length for displaying historical frames
+DECODE_X_BASE       = 0             # Horizontal (X) datum for displaying decoded data in video
 
 TRACE_MAX_FRAME_GAP = 0             # Max frames without region data within a trace
                                     # (i.e. frames without data before closing a trace)
@@ -46,8 +50,6 @@ ROW_FRAME_LOOKAHEAD = 4             # Frame lookahead when determining end of ro
 
 ROW_FRAME_MAXGAP    = 15            # Maximum gap between frames comprising a row
 
-_UNUSED_ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered orphaned
-
 # NOTE: MAX_ADD_RESIDUAL is used when adding a non-overlapping trace to a row candidate.
 # Overlapping traces are added unconditionally, and MAX_ROW_RESIDUAL used to decide
 # if the resulting row candidate is acceptable.  
@@ -58,7 +60,7 @@ _UNUSED_ROW_FRAME_ORPHAN    = 70            # Gap after frame to be considered o
 MAX_ADD_RESIDUAL    = 0.6           # Max squared residual for adding trace to row
                                     # (0.5 too small, 2.0 too large)
 
-MAX_ROW_RESIDUAL    = 2.0           # Max residual for accepting trace residual as row
+MAX_ROW_RESIDUAL    = 2.5           # Max residual for accepting trace residual as row
 
 NO_FIT_RESIDUAL     = 10            # Residual when no degrees of freedom for model fitting
 
@@ -84,7 +86,7 @@ PAUSE_ON_MULTIPLE   = True          # Pause on multiple detection of column posi
 # To assist with debugging...
 
 START_FRAME  = 0        # First frame to process, or zero to start at beginning of video
-STOP_FRAME   = 16000    # Final frame to process, or zero to stop at end of video
+STOP_FRAME   = 0        # Final frame to process, or zero to stop at end of video
 PAUSE_FROM   = 1        # Don't pause until here.  Set to zero for normal pause/breakpoints.
 PAUSE_UNTIL  = 1        # Don't pause after here.  Set to zero for normal pause/breakpoints.
 
@@ -158,420 +160,6 @@ COLOUR_SPROCKET         = Colour_val(R=97,  G=47,  B=14)    # Orange
 COLOUR_HOLE             = Colour_val(R=97,  G=47,  B=14)    # Orange
 COLOUR_HOLE_POS         = Colour_val(R=50,  G=50,  B=33)    # Dull olive
 COLOUR_HOLE_LABELS      = Colour_val(R=60,  G=60,  B=40)    # Light grey
-
-
-# ========================================
-# Monotype tape mapping data
-# ========================================
-
-# No hole for letter 'O' and 15
-# These are the rightmost column and bottom row respectively in the matrix case
-Tape_column_labels = (
-    [ 'N'           #  0
-    , 'M'           #  1
-    , 'L'           #  2
-    , 'K'           #  3
-    , 'J'           #  4
-    , 'I'           #  5
-    , 'H'           #  6
-    , 'G'           #  7
-    , 'F'           #  8
-    , 'S'           #  9
-    , 'E'           # 10
-    , 'D'           # 11
-    , '0075'        # 12
-    , 'C'           # 13
-    , 'B'           # 14
-    , 'A'           # 15
-    , '1'           # 16
-    , '2'           # 17
-    , '3'           # 18
-    , '4'           # 19
-    , '5'           # 20
-    , '6'           # 21    # Not a character row/col
-    , '7'           # 22
-    , '8'           # 23
-    , '9'           # 24
-    , '10'          # 25
-    , '11'          # 26
-    , '12'          # 27
-    , '13'          # 28
-    , '14'          # 29
-    , '0005'        # 30
-    ])
-
-Various_841_matrix = (
-    { 'A': [ (12, 'N') ],
-      'B': [ (12, 'J') ],
-      'C': [ (10, 'N') ],
-      'D': [ (13, 'O') ],
-      'E': [ (12, 'M') ],
-      'F': [ (11, 'N') ],
-      'G': [ (12, 'K') ],
-      'H': [ (14, 'N') ],
-      'I': [ ( 4, 'L') ],
-      'J': [ ( 8, 'H') ],
-      'K': [ (14, 'L') ],
-      'L': [ (11, 'M') ],
-      'M': [ (14, 'M') ],
-      'N': [ (13, 'N') ],
-      'O': [ (12, 'L') ],
-      'P': [ (11, 'L') ],
-      'Q': [ (12, 'H') ],
-      'R': [ (13, 'M') ],
-      'S': [ ( 8, 'I') ],
-      'T': [ (11, 'O') ],
-      'U': [ (13, 'L') ],
-      'V': [ (12, 'I') ],
-      'W': [ (15, 'N') ],
-      'X': [ (14, 'K') ],
-      'Y': [ (13, 'K') ],
-      'Z': [ (10, 'M') ],
-      'a': [ ( 7, 'N') ],
-      'b': [ ( 8, 'L') ],
-      'c': [ ( 4, 'N') ],
-      'd': [ ( 9, 'O') ],
-      'e': [ ( 4, 'O') ],
-      'f': [ ( 2, 'N') ],
-      'g': [ ( 7, 'M') ],
-      'h': [ ( 9, 'N') ],
-      'i': [ ( 1, 'O') ],
-      'j': [ ( 2, 'M') ],
-      'k': [ ( 9, 'K') ],
-      'l': [ ( 1, 'N') ],
-      'm': [ (14, 'O') ],
-      'n': [ ( 8, 'O') ],
-      'o': [ ( 7, 'O') ],
-      'p': [ ( 9, 'M') ],
-      'q': [ ( 8, 'K') ],
-      'r': [ ( 3, 'M') ],
-      's': [ ( 3, 'O') ],
-      't': [ ( 3, 'N') ],
-      'u': [ ( 8, 'N') ],
-      'v': [ ( 9, 'L') ],
-      'w': [ (12, 'O'), (13, 'C') ],
-      'x': [ ( 8, 'J'), (10, 'B') ],
-      'y': [ ( 8, 'M') ],
-      'z': [ ( 4, 'M') ],
-      ':': [ ( 1, 'I') ],
-      ';': [ ( 1, 'K') ],
-      ',': [ ( 1, 'M') ],
-      '.': [ ( 1, 'L') ]
-   })
-
-Caslon_14_matrix = (
-    { 'A': [ (11, 'I') ],
-      'B': [ (10, 'I') ],
-      'C': [ (11, 'K') ],
-      'D': [ (13, 'L') ],
-      'E': [ (11, 'J') ],
-      'F': [ (10, 'J') ],
-      'G': [ (14, 'K') ],
-      'H': [ (14, 'I') ],
-      'I': [ ( 4, 'J') ],
-      'J': [ ( 4, 'K') ],
-      'K': [ (13, 'E') ],
-      'L': [ (11, 'M') ],
-      'M': [ (15, 'G') ],
-      'N': [ (13, 'K') ],
-      'O': [ (13, 'J') ],
-      'P': [ (10, 'K') ],
-      'Q': [ (13, 'O') ],
-      'R': [ (11, 'L') ],
-      'S': [ ( 8, 'J') ],
-      'T': [ (13, 'M') ],
-      'U': [ (14, 'L') ],
-      'V': [ (13, 'N') ],
-      'W': [ (15, 'J') ],
-      'X': [ (13, 'D') ],
-      'Y': [ (12, 'K') ],
-      'Z': [ (12, 'L') ],
-      'a': [ ( 4, 'I') ],
-      'b': [ ( 7, 'J') ],
-      'c': [ ( 4, 'G') ],
-      'd': [ ( 7, 'I') ],
-      'e': [ ( 4, 'H') ],
-      'f': [ ( 2, 'G') ],
-      'g': [ ( 5, 'G') ],
-      'h': [ ( 7, 'G') ],
-      'i': [ ( 1, 'I') ],
-      'j': [ ( 2, 'O') ],
-      'k': [ ( 5, 'J') ],
-      'l': [ ( 1, 'G') ],
-      'm': [ (13, 'H') ],
-      'n': [ ( 7, 'C') ],
-      'o': [ ( 5, 'H') ],
-      'p': [ ( 7, 'F') ],
-      'q': [ ( 7, 'E') ],
-      'r': [ ( 3, 'I') ],
-      's': [ ( 2, 'J') ],
-      't': [ ( 2, 'I') ],
-      'u': [ ( 8, 'H') ],
-      'v': [ ( 5, 'I') ],
-      'w': [ (12, 'J'), (12, 'M') ],
-      'x': [ ( 6, 'I'), (8, 'B') ],
-      'y': [ (6, 'G') ],
-      'z': [ (4, 'L') ],
-      '.': [ (7, 'B') ],
-   })
-
-Bulmer_469_matrix = (
-    { 'I▿':     ['1', 'N', 'I']     # 5wide
-    , '`':      ['1', 'N', 'L']
-    , '´':      ['1', 'A']
-    , ',':      ['1', 'B']
-    , '.':      ['1', 'C']
-    , ')':      ['1', 'D']
-    , 'j':      ['1', 'E']
-    , 'i':      ['1', 'F']
-    , '_':      ['1', 'G']
-    , 'l':      ['1', 'H']
-    , '_i':     ['1', 'I']
-    , '_t':     ['1', 'J']
-    , '_l':     ['1', 'K']
-    , '_j':     ['1', 'L']
-    , '/':      ['1', 'M']
-    , '’':      ['1', 'N']          # Unicode 0x2019 - https://graphicdesign.stackexchange.com/a/66834
-    , '??':     ['1']               # no column hole?
-    , '1':      ['2', 'N', 'I']     # 6wide
-    , '2':      ['2', 'N', 'L']
-    , '3':      ['2', 'A']
-    , '[':      ['2', 'B']
-    , ']':      ['2', 'C']
-    , '(':      ['2', 'D']
-    , '-':      ['2', 'E']
-    , 'f':      ['2', 'F']
-    , '_':      ['2', 'G']
-    , 't':      ['2', 'H']
-    , '_s':     ['2', 'I']
-    , '_f':     ['2', 'J']
-    , '??':     ['2', 'K']          # (double MAT??)
-    , '4':      ['2', 'L']
-    , '5':      ['2', 'M']
-    , '6':      ['2', 'N']
-    , 'I/9':    ['2']
-    , '7':      ['3', 'N', 'I']      # 7wide
-    , 'J':      ['3', 'N', 'L']
-    , 'S':      ['3', 'A']
-    , '!':      ['3', 'B']
-    , ':':      ['3', 'C']
-    , ';':      ['3', 'D']
-    , 'I':      ['3', 'E']
-    , 's':      ['3', 'F']
-    , 'r':      ['3', 'G']
-    , 'z':      ['3', 'H']
-    , '_e':     ['3', 'I']
-    , '_c':     ['3', 'J']
-    , '_y':     ['3', 'K']
-    , '_z':     ['3', 'L']
-    , '_I':     ['3', 'M']
-    , '_:':     ['3', 'N']
-    , '8':      ['3']
-    , '--':     ['4', 'N', 'I']      # 8wide
-    , 'Z▿':     ['4', 'N', 'L']
-    , 'F▿':     ['4', 'A']
-    , 'P▿':     ['4', 'B']
-    , 'L▿':     ['4', 'C']
-    , 'J':      ['4', 'D']
-    , 'c':      ['4', 'E']
-    , 'a':      ['4', 'F']
-    , 'e':      ['4', 'G']
-    , '_r':     ['4', 'H']
-    , '_b':     ['4', 'I']
-    , '_v':     ['4', 'J']
-    , '_k':     ['4', 'K']
-    , '_o':     ['4', 'L']
-    , '_;':     ['4', 'M']
-    , '_!':     ['4', 'N']
-    , '--':     ['4']
-    , 'C▿':     ['5', 'N', 'I']      # 9wide
-    , 'R▿':     ['5', 'N', 'L']
-    , 'T▿':     ['5', 'A']
-    , '3':      ['5', 'B']
-    , '6':      ['5', 'C']
-    , '9':      ['5', 'D']
-    , '£':      ['5', 'E']
-    , 'S':      ['5', 'F']
-    , '_':      ['5', 'G']
-    , 'y':      ['5', 'H']
-    , '_h':     ['5', 'I']
-    , '_p':     ['5', 'J']
-    , '_q':     ['5', 'K']
-    , '_?':     ['5', 'L']
-    , '_9':     ['5', 'M']
-    , '_6':     ['5', 'N']
-    , '_3':     ['5']
-    , 'B▿':     ['6', 'N', 'I']      # 9wide
-    , 'Y▿':     ['6', 'N', 'L']
-    , '$':      ['6', 'A']
-    , '7':      ['6', 'B']
-    , '4':      ['6', 'C']
-    , ':1':     ['6', 'D']
-    , ':0':     ['6', 'E']
-    , '*/':     ['6', 'F']
-    , 'g':      ['6', 'G']
-    , 'v':      ['6', 'H']
-    , '_d':     ['6', 'I']
-    , '_g':     ['6', 'J']
-    , '_x':     ['6', 'K']
-    , '_0':     ['6', 'L']
-    , '_1':     ['6', 'M']
-    , '_4':     ['6', 'N']
-    , '_7':     ['6']
-    , 'V▿':     ['7', 'N', 'I']      # 9wide
-    , 'E▿':     ['7', 'N', 'L']
-    , 'A▿':     ['7', 'A']
-    , '2':      ['7', 'B']
-    , '5':      ['7', 'C']
-    , '8':      ['7', 'D']
-    , '§/':     ['7', 'E']
-    , 'x':      ['7', 'F']
-    , 'o':      ['7', 'G']
-    , 'k':      ['7', 'H']
-    , '✝︎/':     ['7', 'I']
-    , '_a':     ['7', 'J']
-    , '_£':     ['7', 'K']
-    , 'nm':     ['7', 'L']          # (naut mile?)
-    , '_8':     ['7', 'M']
-    , '_5':     ['7', 'N']
-    , '_2':     ['7']
-    , '--':     ['8', 'N', 'I']      # 10wide
-    , '--':     ['8', 'N', 'L']
-    , 'X▿':     ['8', 'A']
-    , 'U▿':     ['8', 'B']
-    , 'D▿':     ['8', 'C']
-    , 'N▿':     ['8', 'D']
-    , '?':      ['8', 'E']
-    , 'p':      ['8', 'F']
-    , 'n':      ['8', 'G']
-    , 'b':      ['8', 'H']
-    , 'fi':     ['8', 'I']
-    , 'fl':     ['8', 'J']
-    , '_u':     ['8', 'K']
-    , '_fi':    ['8', 'L']
-    , '_J':     ['8', 'M']
-    , '*':      ['8', 'N']
-    , '†':      ['8']
-    , '--':     ['9', 'N', 'I']      # 10wide
-    , '--':     ['9', 'N', 'L']
-    , 'Q▿':     ['9', 'A']
-    , 'K▿':     ['9', 'B']
-    , 'G▿':     ['9', 'C']
-    , 'O▿':     ['9', 'D']
-    , 'd':      ['9', 'E']
-    , 'u':      ['9', 'F']
-    , 'h':      ['9', 'G']
-    , 'q':      ['9', 'H']
-    , '_n':     ['9', 'I']
-    , '_fl':    ['9', 'J']
-    , '_ff':    ['9', 'K']
-    , ' ':      ['9', 'L']
-    , '_S':     ['9', 'M']
-    , '‡':      ['9', 'N']
-    , '--':     ['9']
-    , '--':     ['10', 'N', 'I']      # 11wide
-    , '--':     ['10', 'N', 'L']
-    , '--':     ['10', 'A']
-    , 'H▿':     ['10', 'B']
-    , 'Z':      ['10', 'C']
-    , 'F':      ['10', 'D']
-    , 'P':      ['10', 'E']
-    , 'ff':     ['10', 'F']
-    , 'oe':     ['10', 'G']
-    , '_C':     ['10', 'H']
-    , '_Z':     ['10', 'I']
-    , '--':     ['10', 'J']
-    , '--':     ['10', 'K']
-    , '--':     ['10', 'L']
-    , '--':     ['10', 'M']
-    , '--':     ['10', 'N']
-    , '--':     ['10']
-    , '--':     ['11', 'N', 'I']      # 12wide
-    , 'M▿':     ['11', 'N', 'L']
-    , 'B':      ['11', 'A']
-    , 'L':      ['11', 'B']
-    , 'E':      ['11', 'C']
-    , 'ae':     ['11', 'D']
-    , '_ae':    ['11', 'E']
-    , '_A':     ['11', 'F']
-    , '_E':     ['11', 'G']
-    , '_B':     ['11', 'H']
-    , '_L':     ['11', 'I']
-    , '_F':     ['11', 'J']
-    , '_P':     ['11', 'K']
-    , '_V':     ['11', 'L']
-    , '_K':     ['11', 'M']
-    , '_X':     ['11', 'N']
-    , '--':     ['11']
-    , 'AE▿':    ['12', 'N', 'I']      # 13wide
-    , 'X':      ['12', 'N', 'L']
-    , 'Y':      ['12', 'A']
-    , 'V':      ['12', 'B']
-    , 'C':      ['12', 'C']
-    , 'R':      ['12', 'D']
-    , 'A':      ['12', 'E']
-    , 'w':      ['12', 'F']
-    , '_w':     ['12', 'G']
-    , '_O':     ['12', 'H']
-    , '_T':     ['12', 'I']
-    , '_U':     ['12', 'J']
-    , '_R':     ['12', 'K']
-    , '_G':     ['12', 'L']
-    , '_Y':     ['12', 'M']
-    , '_D':     ['12', 'N']
-    , '_Q':     ['12']
-    , 'OE▿':    ['13', 'N', 'I']      # 14wide
-    , 'W▿':     ['13', 'N', 'L']
-    , 'Q':      ['13', 'A']
-    , 'K':      ['13', 'B']
-    , 'D':      ['13', 'C']
-    , 'G':      ['13', 'D']
-    , 'T':      ['13', 'E']
-    , 'N':      ['13', 'F']
-    , 'O':      ['13', 'G']
-    , 'U':      ['13', 'H']
-    , 'm':      ['13', 'I']
-    , 'oe':     ['13', 'J']
-    , 'ffi':    ['13', 'K']
-    , 'ffl':    ['13', 'L']
-    , '_m':     ['13', 'M']
-    , '_ffi':   ['13', 'N']
-    , '_ffl':   ['13']
-    , '--':     ['14', 'N', 'I']      # 15wide
-    , '--':     ['14', 'N', 'L']
-    , '--':     ['14', 'A']
-    , '--':     ['14', 'B']
-    , '--':     ['14', 'C']
-    , '–':      ['14', 'D']     # em dash
-    , '&':      ['14', 'E']
-    , 'H':      ['14', 'F']
-    , 'M':      ['14', 'G']
-    , '_N':     ['14', 'H']
-    , '_H':     ['14', 'I']
-    , '_M':     ['14', 'J']
-    , '_&':     ['14', 'K']
-    , '--':     ['14', 'L']
-    , '--':     ['14', 'M']
-    , '--':     ['14', 'N']
-    , 'gy':     ['14']          # ??
-    , '--':     ['N', 'I']      # 18wide  (no row hole)
-    , '--':     ['N', 'L']
-    , '✦':      ['A']           # 4-point star
-    , 'AE':     ['B']
-    , '--':     ['C']
-    , 'OE':     ['D']
-    , '✖':      ['E']
-    , 'W':      ['F']
-    , '%':      ['G']
-    , '_W':     ['H']
-    , '+':      ['I']
-    , '_OE':    ['J']
-    , '--':     ['K']
-    , '_AE':    ['L']
-    , '..':     ['M']
-    , '⌿':      ['N']           # crossed out em dash?
-    , '__':     []              # No character
-   })
 
 
 # ===================================================== #
@@ -853,7 +441,7 @@ def convert_frame_to_greyscale(frame):
     """
     return cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
-def select_highlight_regions(frame):
+def select_highlight_regions(frame, threshold):
     """
     Select bright highlight regions
     
@@ -862,7 +450,6 @@ def select_highlight_regions(frame):
     Is this helpful?  Assuming not
     ??? frame_blur = cv.GaussianBlur(frame_grey, (7, 7), 0)
     """
-    threshold = MARKER_THRESHOLD
     high_out  = 255 
     T, frame_thresholded = cv.threshold(
         frame, threshold, high_out, 
@@ -912,6 +499,102 @@ def adjacent_region_region(r1xmin,r1xmax,r1ymin,r1ymax, r2xmin,r2xmax,r2ymin,r2y
     return ( (r1xmax >= r2xmin-REGION_X_ADJACENT) and (r1xmin <= r2xmax+REGION_X_ADJACENT) and
              (r1ymax >= r2ymin-REGION_Y_ADJACENT) and (r1ymax <= r2ymax+REGION_Y_ADJACENT) )
 
+def _unused_find_frame_regions(frame_number, frame):
+    """
+    Finds distinct highlight regions in a video frame.
+    
+    frame_number      is the video frame number being processed (saved with each region)
+    frame             is frame of binary pixels of highlights (see `select_highlight_regions`),
+                      in the form of a OpenCV frame (NumPy array) of zero or 255 pixels.
+    
+    Returns:          a list of `region_frame_pixels` values, one for each region detected.
+    """
+
+    global paused, step     # May be used to pause video scan for debugging
+
+    # Function used to combine rows of pixels into ranges
+    # This is an optimization that is intended to reduce the amount of Python-level
+    # looping required when combining pixels into regions.
+    #
+    # pixel         is new pixel value to be considered, supplied as (y, x)
+    #
+    # Returns a tuple of updated (acc, lastpy, lastpx_min, lastpx_max) values
+    pixelrow_y    = 0        # Current pixelrow Y coord, or 0
+    pixelrow_minx = 0        # Current pixelrow min X coord
+    pixelrow_nxtx = 0        # Current pixelrow next X coord
+
+    def acc_pixelrow_coords(acc, pixel):
+        py, px = pixel
+        if (py != pixelrow_y) or (px != pixelrow_nxtx):
+            # Start of new pixel row
+            newacc = acc
+            if (pixelrow_y != 0):
+                # return accumulated pixelrow
+                newacc += [(pixelrow_minx, pixelrow_nxtx-1, pixelrow_y)]
+            # Start new pixelrow
+            pixelrow_y    = py
+            pixelrow_minx = px
+            pixelrow_nxtx = px+1
+            return newacc
+        pixelrow_nxtx += 1
+        return acc
+
+    #  Get coords of non-zero pixels
+    pixel_coords  = np.column_stack(np.asarray(frame).nonzero())
+                  # = np.column_stack(np.where(frame))
+    #print("pixel_coords: ", pixel_coords)
+    #              # Note pixels present as (y,x)
+    
+    pixelrow_coords = itertools.reduce(pixel_coords, acc_pixelrow_coords, [])
+
+    # Merge pixelrowss into regions.
+    region_list = []              # [region_frame_pixels]
+    for ipxmin, ipxmax, ipy in pixelrow_coords:
+        region_numbers = []         # List of region numbers adjoining next pixelrow
+        for nr, r in enumerate(region_list):
+            # Find regions that adjoin new pixel
+            merge = False
+            ### @@@ adjacent_region_region(r1xmin,r1xmax,r1ymin,r1ymax, r2xmin,r2xmax,r2ymin,r2ymax)
+            if r and adjacent_region_region(ipxmin,ipxmax,ipy,ipy,r.xmin,r.xmax,r.ymin,r.ymax):
+                # Look for adjacency to actual pixel:
+                for rpx,rpy in r.pixelcoords:
+                    if adjacent_pixel_pixel(ipx,ipy,rpx,rpy):
+                        # New pixel adjacent to existing region: merge in
+                        if ipx < r.xmin: r.xmin = ipx
+                        if ipx > r.xmax: r.xmax = ipx
+                        if ipy < r.ymin: r.ymin = ipy
+                        if ipy > r.ymax: r.ymax = ipy
+                        merge = True
+                if merge:
+                    r.pixelcoords.append((ipx,ipy))
+                    region_numbers.append(nr)
+
+        # If no adjoining region, create new region
+        if len(region_numbers) == 0:
+            r = region_frame_pixels(frame_number, ipx, ipy, ipx, ipy, [(ipx, ipy)])
+            region_list.append(r)
+
+        # If multiple adjoining regions, merge them all
+        elif len(region_numbers) > 1:
+            # Merge newly connected regions
+            r = region_list[region_numbers[0]]
+            for n in range(1, len(region_numbers)):
+                r1 = region_list[region_numbers[n]]
+                if r1.xmin < r.xmin: r.xmin = r1.xmin
+                if r1.xmax > r.xmax: r.xmax = r1.xmax
+                if r1.ymin < r.ymin: r.ymin = r1.ymin
+                if r1.ymax > r.ymax: r.ymax = r1.ymax
+                r.pixelcoords.extend(r1.pixelcoords)
+                region_list[region_numbers[n]] = None
+            region_list[region_numbers[0]] = r
+
+        # If pixel merged with exactly one existing region - nothing more to do.
+        else:
+            pass
+
+    return filter(None, region_list)
+
+
 def find_frame_regions(frame_number, frame):
     """
     Finds distinct highlight regions in a video frame.
@@ -926,9 +609,9 @@ def find_frame_regions(frame_number, frame):
     global paused, step     # May be used to pause video scan for debugging
 
     #  Get coords of non-zero pixels
-    pixel_coords  = np.column_stack(np.where(frame))
-                  # np.column_stack(np.asarray(frame).nonzero())
-
+    pixel_coords  = np.column_stack(np.asarray(frame).nonzero())
+                  # = np.column_stack(np.where(frame))
+                  
     # Merge non-zero pixels into regions.
     region_pixels_list = []              # [region_frame_pixels]
     for ipy,ipx in pixel_coords:
@@ -975,6 +658,8 @@ def find_frame_regions(frame_number, frame):
 
     return filter(None, region_pixels_list)
 
+
+
 # ----------------------------------------- #
 # -- region_frame_centroid ---------------- #
 # ----------------------------------------- #
@@ -994,8 +679,9 @@ class region_frame_centroid(object):
         """
         Draw centroid in supplied video frame buffer
         """
-        cx = round(self.xcen)
-        cy = round(self.ycen)
+        cx,  cy = map_frame_pos(0, 0, self.xcen, self.ycen)
+        # cx = round(self.xcen)
+        # cy = round(self.ycen)
         cr = math.ceil( math.sqrt(self.area) )
         cv.circle(frame, (cx,cy), cr, COLOUR_CENTROID, thickness=2)
         return
@@ -1066,7 +752,7 @@ class region_frame_centroid(object):
                 )
             )
 
-    def overlaps_alt1(self, r2):
+    def _unused_overlaps_alt1(self, r2):
         """
         Test for supplied region overlaps with current region.
 
@@ -1082,7 +768,7 @@ class region_frame_centroid(object):
                    (r1y >= r2.rpixels.ymin)   and (r1y <= r2.rpixels.ymax) ) 
                )
 
-    def overlaps_alt2(self, r2):
+    def _unused_overlaps_alt2(self, r2):
         """
         Test for supplied region overlap with current region.
 
@@ -1148,17 +834,24 @@ class region_trace_open(region_trace):
             f"trace_open: frames {self.frnum:d}::{self.frfin:d}, closing {self.closing:b}"
             )
 
-    def overlaps_region(self, rtry):
+    def overlaps_region(self, ftry, rtry):
         """
-        Determine if supplied region overlaps with the current region trace
+        Determine if supplied region overlaps with the current region trace.
 
-        rtry              a `region_frame_centroid` value that is to be tested.
+        The logic here requires an overlap with the most recently detected region 
+        in the current trace.
+
+        ftry            frame number of the new region to be tested for overlap with
+                        the current trace.
+        rtry            a `region_frame_centroid` value that is to be tested.
 
         returns:        True if the supplied region coordinates overlap the
                         final frame of the current region trace.
         """
         # log_debug("@@@ overlaps_region ", self.frnum, len(self.rcoords))
-        if len(self.rcoords) == 0:
+        if len(self.rcoords) == 0:      # No overlap if no existing regions
+            return False
+        if ftry > self.frfin+1:         # No overlap if not successor frame to last region
             return False
         rend = self.rcoords[-1]         # Last position in trace
         return rend.overlaps(rtry)
@@ -1345,7 +1038,8 @@ def region_trace_detect(frnum, frame_coords, open_traces):
     for rt in open_traces:
         rt.start_next_frame(frnum)
     for rc in frame_coords:
-        ots = [rt for rt in open_traces if rt.overlaps_region(rc)]
+        # ots = list of existing traces that overlap the new region
+        ots = [rt for rt in open_traces if rt.overlaps_region(frnum, rc)]
         if len(ots) == 0:
             # No overlap: new trace
             nt = region_trace_open(frnum, [rc])
@@ -1354,20 +1048,12 @@ def region_trace_detect(frnum, frame_coords, open_traces):
             # Single overlap: add coordinates to that trace
             ots[0].extend_trace(frnum, rc)
         else:
-            # region overlaps multiple traces: merge them
+            # region overlaps multiple existing traces: merge them
             for rt in ots[1:]:
                 for tc in rt.rcoords:
                     ots[0].extend_trace(frnum, tc)
                 rt.discontinue()
             ots[0].extend_trace(frnum, rc)  # Add new coords last
-        ### for rt in open_traces:
-        ###     if rt.overlaps_region(rc):
-        ###         rt.extend_trace(frnum, rc)
-        ###         break # to next rc
-        ###         #@@@@ if region overlaps multiple traces, they should be merged
-        ### else:
-        ###     nt = region_trace_open(frnum, [rc])
-        ###     new_traces.append(nt)
     #@@@@Diagnostic
     if LOG_REGION_TRACE_START <= frnum <= LOG_REGION_TRACE_END:
         for ot in open_traces:
@@ -2036,16 +1722,6 @@ class row_candidate(object):
                      ( (rowgap > mingap) or (rowgap > ROW_FRAME_MAXGAP) )
                    )
         return complete
-
-    def _unused_row_orphaned(self, frnum):
-        """
-        Returns `True` if the current row candidate is considered "orphaned".
-
-        That is, if the current row candidate cannot be used, and if no further 
-        traces can be added to it.
-        """
-        rowgap   = frnum - self.traces.maxfrend
-        return (rowgap > _UNUSED_ROW_FRAME_ORPHAN)
 
 
 # ----------------------------------------- #
@@ -2830,7 +2506,8 @@ def main_processing_loop(video_capture, video_writer, frame_width, frame_height)
 
             # Convert to greyscale, detect highlights
             frame_grey       = convert_frame_to_greyscale(frame)
-            frame_highlights = select_highlight_regions(frame_grey)
+            hl_threshold     = MARKER_THRESHOLD if frame_number <= 13745 else MARKER_THRESHOLD
+            frame_highlights = select_highlight_regions(frame_grey, hl_threshold)
 
             # Display highlight regions
             # ------
@@ -3000,7 +2677,7 @@ def write_extracted_data(row_data_accum, last_frame_num):
             dataout.write(
                 f"row {i:>4d}: frame {rd.frnum:>5d}, data {str(rd)}  "+
                 f"({(comma.join(rd.hole_labels())):10s})  "+
-                f"{rd.encoded_character(Bulmer_469_matrix):s}\n")
+                f"{rd.encoded_character(monotype_matrix):s}\n")
             if rd_prev and (rd.frnum < rd_prev.frnum):
                 break_warning("Row {i:>4d} at frame {rd.frnum:6d} follows row at frame {rd_prev.frnum:6d}")
             rd_prev = rd
